@@ -1,0 +1,10 @@
+target/
+data/
+frontend/node_modules/
+frontend/dist/
+agent/.venv/
+agent/**/__pycache__/
+agent/.aiops-agent/
+.env
+*.log
+hs_err_pid*.log
