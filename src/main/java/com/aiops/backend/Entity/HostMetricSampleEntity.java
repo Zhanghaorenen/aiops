@@ -45,4 +45,6 @@ public class HostMetricSampleEntity {
     public BigDecimal getDiskPercent() { return diskPercent; }
     public Instant getCollectedAt() { return collectedAt; }
     public Instant getReceivedAt() { return receivedAt; }
+    
+    
 }

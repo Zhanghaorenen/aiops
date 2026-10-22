@@ -42,7 +42,7 @@ public class ServerMetricController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "时间范围无效");
         }
         return metrics.findAllByNodeIdAndCollectedAtBetweenOrderByCollectedAtAscIdAsc(
-                nodeId, from, to, PageRequest.of(0, Math.min(Math.max(limit, 1), 1000)));
+                nodeId, from, to, PageRequest.of(0, Math.min(Math.max(limit, 1), 1440)));
     }
 
     private void ensureNode(Long nodeId) {
