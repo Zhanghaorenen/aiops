@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 import psutil
-
+from .snapshot import HostSnapshot, Snapshot
 from .client import ApiError, HttpClient, TransientApiError
 from .config import AgentConfig, ConfigurationError
 
@@ -128,16 +128,22 @@ class Agent:
             sock.close()
 
     def collect(self) -> dict:
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage(self.root)
-        return {
-            "cpuPercent": psutil.cpu_percent(interval=1),
-            "memoryTotalBytes": memory.total,
-            "memoryUsedBytes": memory.used,
-            "diskTotalBytes": disk.total,
-            "diskUsedBytes": disk.used,
-            "collectedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        snapshot = HostSnapshot() ##返回快照数据的格式为{"collected_at": "2024-06-05T12:34:56.789Z", "system": {...}, "gpus": [...]}
+        cpu_percent=snapshot.get_snapshot()["system"]["cpu"]["percent"]
+        memory_total=snapshot.get_snapshot()["system"]["memory"]["total"]
+        memory_used=snapshot.get_snapshot()["system"]["memory"]["used"]
+        disk_total=snapshot.get_snapshot()["system"]["disk"]["total"]
+        disk_used=snapshot.get_snapshot()["system"]["disk"]["used"]
+        collect_at=snapshot.get_snapshot()["collected_at"]
+        data={
+            "collected_at": collect_at,
+            "cpu_percent": cpu_percent,
+            "memory_total": memory_total,
+            "memory_used": memory_used,
+            "disk_total": disk_total,
+            "disk_used": disk_used
         }
+        return data
 
     def run(self) -> None:
         if not self.credential:
