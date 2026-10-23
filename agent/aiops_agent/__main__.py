@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 import psutil
-
+from .snapshot import HostSnapshot
 from .client import ApiError, HttpClient, TransientApiError
 from .config import AgentConfig, ConfigurationError
 
@@ -32,6 +32,7 @@ class Agent:
         self.client = client or HttpClient(
             self.config.backend_url, self.config.request_timeout_seconds
         )
+        self.snapshot_collector = HostSnapshot()
         self.hostname = socket.gethostname()
         self.root = os.environ.get("SystemDrive", "C:") + "\\" if os.name == "nt" else "/"
         self.node_key = self.config.node_key
@@ -128,15 +129,27 @@ class Agent:
             sock.close()
 
     def collect(self) -> dict:
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage(self.root)
+        snapshot = self.snapshot_collector.get_snapshot()
+        system = snapshot["system"]
+
+        if not system:
+            raise AgentError("系统指标采集失败")
+
+        if (
+            system["memory"]["total"] <= 0
+            or system["disk"]["total"] <= 0
+        ):
+            raise AgentError("系统指标无效，停止本次上报")
+
+        self.last_snapshot = snapshot
+
         return {
-            "cpuPercent": psutil.cpu_percent(interval=1),
-            "memoryTotalBytes": memory.total,
-            "memoryUsedBytes": memory.used,
-            "diskTotalBytes": disk.total,
-            "diskUsedBytes": disk.used,
-            "collectedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "cpuPercent": system["cpu"]["percent"],
+            "memoryTotalBytes": system["memory"]["total"],
+            "memoryUsedBytes": system["memory"]["used"],
+            "diskTotalBytes": system["disk"]["total"],
+            "diskUsedBytes": system["disk"]["used"],
+            "collectedAt": snapshot["collected_at"],
         }
 
     def run(self) -> None:
