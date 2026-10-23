@@ -10,7 +10,7 @@ class HostSnapshot:
         self.gpu_collector = GPUInfo()
 
     def get_snapshot(self) -> dict:
-<<<<<<< HEAD
+
         errors = []
 
         try:
@@ -31,12 +31,3 @@ class HostSnapshot:
             "gpus": gpus,
             "errors": errors,
         }
-=======
-            try:
-                 data=self.system_collector.collect_system_info()
-                 return data
-            except data is None :
-                logging.error("Failed to collect system information.")
-           
-        
->>>>>>> 7f1c0b80e3c0880d9b3ceaf830b160ba5aad69ff
