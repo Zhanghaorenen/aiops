@@ -7,93 +7,88 @@ import random
 import signal
 import socket
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 import psutil
 
+from .client import ApiError, HttpClient, TransientApiError
+from .config import AgentConfig, ConfigurationError
 
-class AgentError(Exception):
+
+class AgentError(RuntimeError):
     pass
 
 
-class ApiError(AgentError):
+class AgentStopped(AgentError):
     pass
 
 
 class Agent:
-    def __init__(self) -> None:
-        self.base_url = os.getenv("AIOPS_BACKEND_URL", "http://localhost:8080").rstrip("/")
-        self.interval = max(5, int(os.getenv("AIOPS_AGENT_INTERVAL_SECONDS", "15")))
-        self.state_path = Path(os.getenv(
-            "AIOPS_AGENT_STATE_FILE", str(Path.home() / ".aiops-agent" / "state.json")
-        )).expanduser()
+    def __init__(self, config: AgentConfig | None = None, client: HttpClient | None = None):
+        self.config = config or AgentConfig.from_env()
+        self.client = client or HttpClient(
+            self.config.backend_url, self.config.request_timeout_seconds
+        )
         self.hostname = socket.gethostname()
         self.root = os.environ.get("SystemDrive", "C:") + "\\" if os.name == "nt" else "/"
-        self.node_key = os.getenv("AIOPS_NODE_KEY", f"{self.hostname}-{uuid.getnode():012x}")
-        self.agent_key = os.getenv("AIOPS_AGENT_KEY", str(uuid.uuid4()))
-        self.version = os.getenv("AIOPS_AGENT_VERSION", "0.1.0")
+        self.node_key = self.config.node_key
+        self.agent_key = self.config.agent_key
+        self.version = self.config.agent_version
         self.credential: str | None = None
-        self._running = True
+        self._stop_event = threading.Event()
         self._load_state()
 
     def _load_state(self) -> None:
         try:
-            state = json.loads(self.state_path.read_text(encoding="utf-8"))
-            self.credential = state.get("credential")
-            self.agent_key = os.getenv("AIOPS_AGENT_KEY", state.get("agentKey", self.agent_key))
-            self.node_key = os.getenv("AIOPS_NODE_KEY", state.get("nodeKey", self.node_key))
+            state = json.loads(self.config.state_file.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return
-        except (OSError, ValueError) as exc:
-            raise AgentError(f"Cannot read agent state file {self.state_path}: {exc}") from exc
+        except (OSError, json.JSONDecodeError) as exc:
+            raise AgentError(f"Cannot read agent state file {self.config.state_file}: {exc}") from exc
+        if not isinstance(state, dict):
+            raise AgentError(f"Invalid agent state file: {self.config.state_file}")
+        credential = state.get("credential")
+        if credential is not None and (not isinstance(credential, str) or not credential.strip()):
+            raise AgentError(f"Invalid credential in agent state file: {self.config.state_file}")
+        self.credential = credential
+        self.agent_key = os.getenv("AIOPS_AGENT_KEY", state.get("agentKey", self.agent_key))
+        self.node_key = os.getenv("AIOPS_NODE_KEY", state.get("nodeKey", self.node_key))
 
     def _save_state(self, credential: str) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
-        content = json.dumps({"credential": credential, "agentKey": self.agent_key,
-                              "nodeKey": self.node_key}, ensure_ascii=True)
-        temp_path.write_text(content, encoding="utf-8")
+        path = self.config.state_file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        content = json.dumps({
+            "credential": credential,
+            "agentKey": self.agent_key,
+            "nodeKey": self.node_key,
+        }, ensure_ascii=True)
         try:
-            temp_path.chmod(0o600)
-        except OSError:
-            pass
-        temp_path.replace(self.state_path)
-
-    def _request(self, path: str, body: dict, token: str | None = None) -> dict:
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        request = Request(f"{self.base_url}{path}", data=json.dumps(body).encode("utf-8"),
-                          headers=headers, method="POST")
-        try:
-            with urlopen(request, timeout=10) as response:
-                raw = response.read()
-                return json.loads(raw) if raw else {}
-        except HTTPError as exc:
-            message = exc.read().decode("utf-8", errors="replace")[:300]
-            if exc.code >= 500 or exc.code == 429:
-                raise URLError(f"Backend returned HTTP {exc.code}") from exc
-            raise ApiError(f"Backend rejected {path}: HTTP {exc.code} {message}") from exc
+            temp_path.write_text(content, encoding="utf-8")
+            if os.name != "nt":
+                temp_path.chmod(0o600)
+            temp_path.replace(path)
+        except OSError as exc:
+            raise AgentError(f"Cannot save agent state file {path}: {exc}") from exc
 
     def _retry(self, action):
         delay = 1.0
-        while self._running:
+        while not self._stop_event.is_set():
             try:
                 return action()
-            except (URLError, TimeoutError, ConnectionError, OSError) as exc:
+            except (TransientApiError, TimeoutError, ConnectionError, OSError) as exc:
                 wait = min(delay, 60.0) * random.uniform(0.8, 1.2)
                 print(f"Backend unavailable ({exc}); retrying in {wait:.1f}s", file=sys.stderr)
-                time.sleep(wait)
+                if self._stop_event.wait(wait):
+                    break
                 delay = min(delay * 2, 60.0)
-        raise AgentError("Agent stopped")
+        raise AgentStopped("Agent stopped")
 
     def enroll(self) -> None:
-        enrollment_token = os.getenv("AIOPS_ENROLLMENT_TOKEN")
+        enrollment_token = self.config.enrollment_token
         if not enrollment_token:
             raise AgentError("Set AIOPS_ENROLLMENT_TOKEN to enroll this host")
         system = platform.uname()
@@ -112,10 +107,14 @@ class Agent:
             "agentKey": self.agent_key,
             "agentVersion": self.version,
         }
-        result = self._retry(lambda: self._request("/api/agent/enroll", payload))
-        self.credential = result["credential"]
-        self._save_state(self.credential)
-        print(f"Enrolled node {self.node_key} (id={result['nodeId']})")
+        result = self._retry(lambda: self.client.post("/api/agent/enroll", payload))
+        credential = result.get("credential")
+        node_id = result.get("nodeId")
+        if not isinstance(credential, str) or not credential or node_id is None:
+            raise ApiError("Backend enrollment response is missing nodeId or credential")
+        self._save_state(credential)
+        self.credential = credential
+        print(f"Enrolled node {self.node_key} (id={node_id})")
 
     @staticmethod
     def _local_ip() -> str | None:
@@ -130,7 +129,7 @@ class Agent:
 
     def collect(self) -> dict:
         memory = psutil.virtual_memory()
-        disk = psutil.disk_usage(getattr(self, "root", "/"))
+        disk = psutil.disk_usage(self.root)
         return {
             "cpuPercent": psutil.cpu_percent(interval=1),
             "memoryTotalBytes": memory.total,
@@ -141,29 +140,38 @@ class Agent:
         }
 
     def run(self) -> None:
-        signal.signal(signal.SIGINT, self._stop)
-        if hasattr(signal, "SIGTERM"):
-            signal.signal(signal.SIGTERM, self._stop)
         if not self.credential:
             self.enroll()
-        print(f"Monitoring {self.hostname} every {self.interval}s")
-        while self._running:
-            self._retry(lambda: self._request("/api/agent/metrics", self.collect(), self.credential))
-            self._retry(lambda: self._request("/api/agent/heartbeat", {"agentVersion": self.version}, self.credential))
-            for _ in range(self.interval):
-                if not self._running:
-                    break
-                time.sleep(1)
+        print(f"Monitoring {self.hostname} every {self.config.interval_seconds}s")
+        next_sample = time.monotonic()
+        while not self._stop_event.is_set():
+            self._retry(lambda: self.client.post(
+                "/api/agent/metrics", self.collect(), self.credential
+            ))
+            self._retry(lambda: self.client.post(
+                "/api/agent/heartbeat", {"agentVersion": self.version}, self.credential
+            ))
+            next_sample += self.config.interval_seconds
+            delay = max(0.0, next_sample - time.monotonic())
+            if delay == 0:
+                next_sample = time.monotonic()
+            self._stop_event.wait(delay)
 
-    def _stop(self, *_args) -> None:
-        self._running = False
+    def stop(self, *_args) -> None:
+        self._stop_event.set()
 
 
 def main() -> int:
     try:
-        Agent().run()
+        agent = Agent()
+        signal.signal(signal.SIGINT, agent.stop)
+        if hasattr(signal, "SIGTERM"):
+            signal.signal(signal.SIGTERM, agent.stop)
+        agent.run()
         return 0
-    except (AgentError, ApiError, KeyError, ValueError) as exc:
+    except AgentStopped:
+        return 0
+    except (AgentError, ApiError, ConfigurationError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     except KeyboardInterrupt:

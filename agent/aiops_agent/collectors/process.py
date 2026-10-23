@@ -13,19 +13,20 @@ class ProcessCollector:
                 "name": process.name(),
                 "status": process.status(),
                 "cmdline": process.cmdline(),
-                "cpu_percent": process.cpu_percent(interval=1.0),
+            "cpu_percent": process.cpu_percent(interval=None),
                 "create_time": process.create_time(),
                 "num_threads": process.num_threads(),
                 "username": process.username()
             }
 
-        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-            print("获取进程信息失败:", e)
-            return "进程信息获取失败"
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            return None
 
     def classify_task(self, process_info: dict) -> str:
         # 进程名
-        name = process_info.get("name", "").lower()
+        if not isinstance(process_info, dict):
+            return "Unknown"
+        name = (process_info.get("name") or "").lower()
 
         # 启动命令
         cmdline = " ".join(process_info.get("cmdline") or []).lower()
