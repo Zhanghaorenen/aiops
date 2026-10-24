@@ -1,11 +1,12 @@
+import httpx
 
 
-async def get_server_latest_metrics() -> dict:
+async def get_server_latest_metrics(
+    node_id: int,
+    access_token: str
+) -> dict:
     """
-    获取服务器最新的指标数据
+    查询指定服务器的最新监控数据。
+    使用 httpx 请求 Spring Boot 后端。
     """
-    from .server_metrics import ServerMetricsCollector
-
-    collector = ServerMetricsCollector()
-    metrics = collector.collect_metrics()
-    return metrics
+    ...
