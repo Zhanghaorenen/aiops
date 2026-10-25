@@ -6,10 +6,7 @@ app = FastAPI(
     description="AIOps AI Service API",
 )
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
-@app.get("/metrics")
+@app.get("/api/gpu_status/{server_id}")
 def get_metrics():
     from .tools.server_metrics import get_server_latest_metrics
     metrics = get_server_latest_metrics()

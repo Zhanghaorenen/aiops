@@ -7,24 +7,15 @@
 """
 import logging
 from client.platform_client import PlatformClient
-
+from config import Config
 class ServerManager:
-    def __init__(self, server_id: int, server_name: str, server_snapshot: dict, ):
-        """
-        初始化服务器管理器
-        :param server_id: 服务器ID
-        :param server_name: 服务器名称
-        :param server_snapshot: 服务器快照
-        :param server: 服务器对象
-        """
-        self.server_id = server_id
-        self.server_name=server_name
-        self.server_snapshot =server_snapshot
-    async def list_servers(self) -> dict:
-        "查询有权限访问的服务器"
+    def __init__(self, platform_client:PlatformClient,base_url:str,access_token:str):
+       self.client=platform_client(base_url=base_url, access_token=access_token)
+    async def list_servers(self,base_url:str,access_token:str) -> dict:
+        
         try:
             # 使用 PlatformClient 查询服务器列表
-            platform_client = PlatformClient()
+            platform_client = self.client
             servers = await platform_client.get_server_list()
             return servers
         except Exception as e:
@@ -36,8 +27,8 @@ class ServerManager:
         使用 PlatformClient 请求 Spring Boot 后端。
         """
         try:
-            platform_client = PlatformClient()
-            self.server_snapshot = platform_client.get_server_snapshot(server_id)
+            platform_client = self.client
+            self.server_snapshot = await platform_client.get_server_snapshot(server_id)
             return self.server_snapshot
         except Exception as e:
             logging.error(f"Error occurred while getting server details for server_id {server_id}: {e}")
@@ -48,7 +39,7 @@ class ServerManager:
         使用 PlatformClient 请求 Spring Boot 后端。
         """
         try:
-            server_info=self.get_server_snapshot(server_id)
+            server_info=await self.get_server_snapshot(server_id)
             cpu_status = server_info.get("system", {}).get("cpu", {})
             return cpu_status
         except Exception as e:
@@ -60,7 +51,7 @@ class ServerManager:
         使用 PlatformClient 请求 Spring Boot 后端。
         """
         try:
-            server_info=self.get_server_snapshot(server_id)
+            server_info=await self.get_server_snapshot(server_id)
             memory_status = server_info.get("system", {}).get("memory", {})
             return memory_status
         except Exception as e:
@@ -73,7 +64,7 @@ class ServerManager:
         使用 PlatformClient 请求 Spring Boot 后端。
         """
         try:
-            server_info=self.get_server_snapshot(server_id)
+            server_info=await self.get_server_snapshot(server_id)
             disk_status = server_info.get("system", {}).get("disk", {})
             return disk_status
         except Exception as e:
@@ -86,7 +77,7 @@ class ServerManager:
         使用 PlatformClient 请求 Spring Boot 后端。
         """
         try:
-            server_info=self.get_server_snapshot(server_id)
+            server_info=await self.get_server_snapshot(server_id)
             gpu_process_info = server_info.get("gpus", {}).get
             (gpu_id, {}).get("processes", [])
             return gpu_process_info
@@ -101,7 +92,7 @@ class ServerManager:
         使用 PlatformClient 请求 Spring Boot 后端。
         """
         try:
-            platform_client = PlatformClient()
+            platform_client = self.client
             metric_history = await platform_client.get_server_metric_history(server_id, metric_name, start_time, end_time)
             return metric_history
         except Exception as e:
@@ -114,7 +105,7 @@ class ServerManager:
         使用 PlatformClient 请求 Spring Boot 后端。
         """
         try:
-            platform_client = self.get_metric_history(server_id, "gpu", 
+            platform_client = await self.get_metric_history(server_id, "gpu", 
                                                       start_time, end_time)
             
             gpu_history = platform_client.get("gpus", {}).get(gpu_id, {}).get("history", [])
@@ -129,7 +120,7 @@ class ServerManager:
         使用 PlatformClient 请求 Spring Boot 后端。
         """
         try:
-            platform_client = PlatformClient()
+            platform_client = self.client
             server_overview = await platform_client.get_server_overview(server_id)
             return server_overview
         except Exception as e:
@@ -142,7 +133,7 @@ class ServerManager:
         使用 PlatformClient 请求 Spring Boot 后端。
         """
         try:
-            platform_client = PlatformClient()
+            platform_client = self.client
             cluster_overview = await platform_client.get_cluster_overview()
             return cluster_overview
         except Exception as e:
