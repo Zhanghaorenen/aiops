@@ -9,8 +9,8 @@ import logging
 from client.platform_client import PlatformClient
 from config import Config
 class ServerManager:
-    def __init__(self, platform_client:PlatformClient,base_url:str,access_token:str):
-       self.client=platform_client(base_url=base_url, access_token=access_token)
+    def __init__(self, platform_client:PlatformClient):
+       self.client=platform_client
     async def list_servers(self,base_url:str,access_token:str) -> dict:
         
         try:
@@ -78,8 +78,7 @@ class ServerManager:
         """
         try:
             server_info=await self.get_server_snapshot(server_id)
-            gpu_process_info = server_info.get("gpus", {}).get
-            (gpu_id, {}).get("processes", [])
+            gpu_process_info = server_info.get("gpus", {}).get(gpu_id, {}).get("processes", [])
             return gpu_process_info
         except Exception as e:
             logging.error(f"Error occurred while getting GPU process info for server_id {server_id}: {e}")

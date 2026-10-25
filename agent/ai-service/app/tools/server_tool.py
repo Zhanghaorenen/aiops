@@ -2,16 +2,14 @@
 from .server_manager import ServerManager
 
 class server_tool:
-    def __init__(self, base_url: str, access_token: str):
-        self.base_url = base_url
-        self.access_token = access_token
-        self.server_manager = ServerManager(base_url=base_url, access_token=access_token)
+    def __init__(self, server_manager:ServerManager):
+        self.server_manager = server_manager
     async def list_servers(self) -> dict:
         """
         查询有权限访问的服务器列表。
         使用 ServerManager 请求 Spring Boot 后端。
         """
-        servers = await self.server_manager.list_servers(self.base_url, self.access_token)
+        servers = await self.server_manager.list_servers()
         return servers
     async def get_server_status(self, server_id: int) -> dict:
         """

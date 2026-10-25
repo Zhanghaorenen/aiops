@@ -1,24 +1,26 @@
 """完整模型调用
 """
 
-
+from openai import AsyncOenai
 class LLMClient:
-    def __init__(self, model_name: str):
-        self.model_name = model_name
+    def __init__(self, model: str,base_url:str,api_key:str):
+        self.model=model
+        self.client=AsyncOenai(
+            base_url=base_url,
+            api_key=api_key,
+            timeout=30
+        )
 
-    def generate_response(self, prompt: str) -> str:
-        # 这里可以根据模型名称选择不同的模型调用方式
-        if self.model_name == "gpt-3.5":
-            return self._call_gpt_3_5(prompt)
-        elif self.model_name == "gpt-4":
-            return self._call_gpt_4(prompt)
-        else:
-            raise ValueError(f"Unsupported model: {self.model_name}")
+    async def chat(self,message:list[dict],tools=None):
+        kwargs={
+            "model":self.model,
+            "messages":message
+        }
+        if tools:
+            kwargs["tools"]=tools
+            kwargs['choice']='auto'
 
-    def _call_gpt_3_5(self, prompt: str) -> str:
-        # 调用 GPT-3.5 的接口逻辑
-        return f"GPT-3.5 response to: {prompt}"
-
-    def _call_gpt_4(self, prompt: str) -> str:
-        # 调用 GPT-4 的接口逻辑
-        return f"GPT-4 response to: {prompt}"
+        response=await self.client.chat(**kwargs)
+        return response
+    async def close(self):
+        await self.client.aclose()

@@ -30,6 +30,18 @@ class PlatformClient:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             return response.json()
+    async def get_server_snapshot(self, server_id: int) -> dict:
+        """
+        查询指定服务器的详细信息。
+        使用 httpx 请求 Spring Boot 后端。
+        """
+        url = f"{self.base_url}/api/servers/{server_id}/snapshot"
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
     async def get_gpu_process(self, server_id: int, gpu_id: int) -> dict:
         """
         查询指定服务器的GPU进程信息。
