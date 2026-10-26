@@ -14,7 +14,7 @@
 
 ```mermaid
 flowchart LR
-  UI[React 管理界面] -->|JWT 用户 API| API[Spring Boot API]
+  UI[Vue 3 管理界面] -->|JWT 用户 API| API[Spring Boot API]
   Agent[Python Agent] -->|Agent 凭证| API
   API --> DB[(MySQL 8)]
   API -. 后续内部 API .-> AI[FastAPI AI Service]

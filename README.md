@@ -40,6 +40,10 @@ cmd.exe /d /c mvnw.cmd test
 
 ## Web console
 
+The console uses Vue 3 single-file components, Vue Router, Pinia, Ant Design Vue,
+TypeScript and ECharts. See [frontend/README.md](frontend/README.md) for the Chinese
+development guide and page/component map.
+
 Windows local launcher (selects free ports and connects the frontend proxy):
 
 ```powershell

@@ -5,22 +5,23 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
-    "@ant-design/icons": "^6.0.0",
-    "antd": "^5.22.0",
+    "@ant-design/icons-vue": "^7.0.1",
+    "ant-design-vue": "^4.2.6",
     "axios": "^1.7.9",
     "echarts": "^6.1.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "pinia": "^3.0.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^6.1.2",
+    "@vitejs/plugin-vue": "^6.0.0",
     "typescript": "^5.7.2",
-    "vite": "^8.3.4"
+    "vite": "8.3.4",
+    "vue-tsc": "^3.0.0"
   }
 }

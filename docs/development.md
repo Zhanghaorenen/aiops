@@ -23,7 +23,7 @@ $env:AIOPS_ADMIN_PASSWORD = "至少12个字符的管理员密码"
 
 当前 `pom.xml` 使用 Spring Boot 4.1.1、Java 17、WebMVC、Data JPA、Spring Security、Flyway、MySQL Connector；测试使用 H2。执行 `.\mvnw.cmd test`。
 
-Flyway V1-V4 初始化认证、节点、Agent 注册凭证、主机指标并兼容旧原型表；JPA 使用 `ddl-auto=validate`。旧表数据不会自动转入新领域模型。管理员仅在同时配置 `AIOPS_ADMIN_USERNAME` 与 12 至 72 字符的 `AIOPS_ADMIN_PASSWORD` 时创建。注册令牌由已登录用户签发，有效期 30 分钟且只能使用一次；Agent 密钥和注册令牌只以 SHA-256 摘要存库。Agent 客户端位于 `agent/`，React 控制台位于 `frontend/`。
+Flyway V1-V4 初始化认证、节点、Agent 注册凭证、主机指标并兼容旧原型表；JPA 使用 `ddl-auto=validate`。旧表数据不会自动转入新领域模型。管理员仅在同时配置 `AIOPS_ADMIN_USERNAME` 与 12 至 72 字符的 `AIOPS_ADMIN_PASSWORD` 时创建。注册令牌由已登录用户签发，有效期 30 分钟且只能使用一次；Agent 密钥和注册令牌只以 SHA-256 摘要存库。Agent 客户端位于 `agent/`，Vue 3 控制台位于 `frontend/`，页面与组件说明见 `frontend/README.md`。
 
 ## 前端
 

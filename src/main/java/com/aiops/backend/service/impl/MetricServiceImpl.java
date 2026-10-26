@@ -103,4 +103,7 @@ public class MetricServiceImpl implements MetricService {
         }
         return value.trim();
     }
-}
+    public ClusterOverview getClusterOverview(Long clusterId) {
+        // TODO: Implement this method
+        return null;
+    }
