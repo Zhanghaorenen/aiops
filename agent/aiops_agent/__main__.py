@@ -13,11 +13,9 @@ import uuid
 from datetime import datetime, timezone
 
 import psutil
-<<<<<<< HEAD
+
 from .snapshot import HostSnapshot
-=======
-from .snapshot import HostSnapshot, Snapshot
->>>>>>> 7f1c0b80e3c0880d9b3ceaf830b160ba5aad69ff
+
 from .client import ApiError, HttpClient, TransientApiError
 from .config import AgentConfig, ConfigurationError
 

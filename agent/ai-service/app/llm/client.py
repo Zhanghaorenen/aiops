@@ -18,9 +18,11 @@ class LLMClient:
         }
         if tools:
             kwargs["tools"]=tools
-            kwargs['choice']='auto'
-
-        response=await self.client.chat(**kwargs)
-        return response
+            kwargs['tool_choice']='auto'
+        ## 发生异常时，openai库会自动重试，直到达到最大重试次数
+        completion=await self.client.chat.completions.create(**kwargs)
+        if not completion.choices:
+            raise ValueError(  "模型没有返回有效结果")
+        return completion.choices[0].message
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

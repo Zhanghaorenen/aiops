@@ -40,13 +40,34 @@ cmd.exe /d /c mvnw.cmd test
 
 ## Web console
 
+Windows local launcher (selects free ports and connects the frontend proxy):
+
+```powershell
+.\start-local.ps1
+```
+
+It prompts for the MySQL password unless `AIOPS_DB_PASSWORD` is set. An existing
+administrator account is required for real data; for a new database set
+`AIOPS_ADMIN_USERNAME` and `AIOPS_ADMIN_PASSWORD` before launching. The login page
+also provides an explicitly labelled demo environment with sample hosts and trends.
+The launcher starts background processes and prints their ports and log paths.
+
+The console includes a fleet overview, searchable/filterable server inventory,
+host details with 1/6/24-hour trends and CSV export, one-time enrollment tokens,
+Windows/Linux Agent commands, and password changes. Real mode uses the existing
+MySQL APIs. No sample hosts are inserted into the database.
+
 ```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. Configure `VITE_API_BASE_URL` if the backend is not at `http://localhost:8080`; the backend CORS origin can be changed with `AIOPS_WEB_ALLOWED_ORIGIN`.
+Open `http://localhost:5173`. By default Vite proxies `/api` to `http://localhost:8080`.
+Set `AIOPS_PROXY_TARGET` before starting Vite when using another backend port and
+`VITE_AGENT_BACKEND_URL` for the address in generated Agent commands. Production
+hosting needs an `/api` reverse proxy, or an explicit `VITE_API_BASE_URL` and
+matching `AIOPS_WEB_ALLOWED_ORIGIN` on the backend.
 
 ## Python Agent
 

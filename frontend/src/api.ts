@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080',
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? '',
   timeout: 12000,
 })
 
@@ -12,7 +12,7 @@ api.interceptors.request.use((config) => {
 })
 
 api.interceptors.response.use((response) => response, (error) => {
-  if (error.response?.status === 401) {
+  if (error.response?.status === 401 && error.config?.url !== '/api/auth/login') {
     localStorage.removeItem('aiops.accessToken')
     window.dispatchEvent(new Event('aiops:unauthorized'))
   }
@@ -59,6 +59,7 @@ export interface LoginResponse {
 
 export function errorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
+    if (!error.response) return '无法连接后端服务，请确认后端已启动后重试'
     return error.response?.data?.message ?? error.message ?? '请求失败，请稍后重试'
   }
   return error instanceof Error ? error.message : '发生未知错误'

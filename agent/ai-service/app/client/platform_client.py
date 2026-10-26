@@ -2,7 +2,11 @@ import httpx
 
 
 class PlatformClient:
-    def __init__(self, base_url: str, access_token: str):
+    def __init__(self, base_url: str, access_token: str,timeout:float=10.0):
+        if(not base_url.startswith("http://") and not base_url.startswith("https://")):
+            raise ValueError("base_url must start with 'http://' or 'https://'")
+        if not access_token:
+            raise ValueError("access_token must not be empty")
         self.base_url = base_url
         self.access_token = access_token
 
