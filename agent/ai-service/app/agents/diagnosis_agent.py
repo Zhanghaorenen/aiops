@@ -166,7 +166,8 @@ class DiagnosisAgent:
 
     async def answer(
         self,
-        question: str
+        question: str,
+        history: list[dict] | None = None
     ) -> str:
         """④ 核心：模型决策 → 工具执行 → 模型回答"""
 
@@ -177,13 +178,23 @@ class DiagnosisAgent:
             {
                 "role": "system",
                 "content": SYSTEM_PROMPT
-            },
-            {
-                "role": "user",
-                "content": question
             }
         ]
+        for  item in history or []:
+            if item.get("role") in ("user", "assistant"):
+                raise ValueError(
+                    "历史消息中不能包含 user 或 assistant 角色"
+                )
+            message.append({
+                "role":item["role"],
+                "content":item["content"]
+                })
+        messages.append({
+            "role": "user",
+            "content": question
+        })
 
+            
         for round_index in range(self.max_rounds):
 
             logger.info(
