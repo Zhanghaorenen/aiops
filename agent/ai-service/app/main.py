@@ -1,13 +1,11 @@
 from fastapi import FastAPI
-
+from .api.chat import router as chat_router
 app = FastAPI(
     title="AIOps AI Service",
     version="1.0.0",
     description="AIOps AI Service API",
 )
+app.include_router(chat_router)
 
-@app.get("/api/gpu_status/{server_id}")
-def get_metrics():
-    from .tools.server_metrics import get_server_latest_metrics
-    metrics = get_server_latest_metrics()
-    return metrics
+
+    

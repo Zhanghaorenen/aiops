@@ -1,11 +1,11 @@
 """完整模型调用
 """
 
-from openai import AsyncOenai
+from openai import AsyncOpenAI
 class LLMClient:
     def __init__(self, model: str,base_url:str,api_key:str):
         self.model=model
-        self.client=AsyncOenai(
+        self.client=AsyncOpenAI(
             base_url=base_url,
             api_key=api_key,
             timeout=30
