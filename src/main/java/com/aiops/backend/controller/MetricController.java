@@ -40,4 +40,38 @@ public class MetricController {
     public MetricEntity getLatestMetricByAgentId(@PathVariable Long agentId) {
         return metricService.getLatestMetricByAgentId(agentId);
     }
+    @GetMapping("/agents/{agentId}/history")
+    public List<MetricEntity> getMetricHistoryByAgentId(@PathVariable Long agentId) {
+        return metricService.getMetricHistoryByAgentId(agentId);
+    }
+    /**
+     * 查询“服务器列表、服务器详细信息、GPU进程信息、指标历史数据，服务器概览、集群概览
+     */
+    @GetMapping("/agents/{agentId}/details")
+    public MetricEntity getAgentDetails(@PathVariable Long agentId) {
+        // 调用 MetricService 的 getAgentDetails 方法获取服务器详细信息
+        AgentDetails agentDetails = metricService.getAgentDetails(agentId);
+        // 将 AgentDetails 转换为 MetricEntity
+        MetricEntity metricEntity = new MetricEntity();
+       
+        return metricEntity;
+    }
+    @GetMapping("/agents/{agentId}/overview")
+    public MetricEntity getAgentOverview(@PathVariable Long agentId) {
+        AgentOverview agentOverview = metricService.getAgentOverview(agentId);
+        
+        return agentOverview
+    }
+    @GetMapping("/clusters/{clusterId}/overview")
+    public ClusterOverview getClusterOverview(@PathVariable Long clusterId) {
+        ClusterOverview clusterOverview = metricService.getClusterOverview(clusterId);
+        return clusterOverview;
+    }
+    @GetMapping("/clusters/{clusterId}/details")
+    public ClusterDetails getClusterDetails(@PathVariable Long clusterId) {
+        ClusterDetails clusterDetails = metricService.getClusterDetails(clusterId);
+        return clusterDetails;
+    }
+    
 }
+

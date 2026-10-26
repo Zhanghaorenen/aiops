@@ -11,4 +11,9 @@ public interface MetricService {
     List<MetricEntity> listRecentMetrics(int limit);
 
     MetricEntity getLatestMetricByAgentId(Long agentId);
+    List<MetricEntity> getMetricHistoryByAgentId(Long agentId);
+    AgentDetails getAgentDetails(Long agentId);
+    AgentOverview getAgentOverview(Long agentId);
+    ClusterOverview getClusterOverview(Long clusterId);
+    ClusterDetails getClusterDetails(Long clusterId);
 }

@@ -1,5 +1,10 @@
 import httpx
 
+"""
+PlatformClient 是一个用于与平台后端进行交互的客户端类。
+查询“服务器列表、服务器详细信息、GPU进程信息、指标历史数据，服务器概览、集群概览”等功能。
+使用 httpx 库发送异步 HTTP 请求到 Spring Boot 后端。
+"""
 
 class PlatformClient:
     def __init__(self, base_url: str, access_token: str,timeout:float=10.0):
