@@ -43,6 +43,8 @@ class AgentServiceImplTests {
         request.setName("agent-update-01");
         request.setIp("10.0.0.12");
         AgentEntity saved = service.registerAgent(request);
+        // Compare the persisted DATETIME(6), rather than the pre-insert nanosecond value.
+        java.time.Instant createdAt = service.getAgentById(saved.getId()).getCreatedAt();
 
         AgentEntity update = new AgentEntity();
         update.setName("agent-update-02");
@@ -54,7 +56,8 @@ class AgentServiceImplTests {
         AgentEntity updated = service.updateAgent(saved.getId(), update);
 
         assertEquals(saved.getId(), updated.getId());
-        assertEquals(saved.getCreatedAt(), updated.getCreatedAt());
+        assertEquals(createdAt, updated.getCreatedAt());
+        assertEquals(createdAt, service.getAgentById(saved.getId()).getCreatedAt());
         assertEquals("agent-update-02", updated.getName());
         assertEquals("server-update-02", updated.getHostname());
         assertEquals("MAINTENANCE", updated.getStatus());

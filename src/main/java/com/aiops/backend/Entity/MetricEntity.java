@@ -1,50 +1,41 @@
 package com.aiops.backend.entity;
 
 import java.time.Instant;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.aiops.backend.persistence.UtcInstantTypeHandler;
+import org.apache.ibatis.type.JdbcType;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 
-@Entity
-@Table(name = "metrics")
+@TableName(value = "metrics", autoResultMap = true)
 public class MetricEntity {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    @Column(nullable = false)
-    private Long agentId;
+    @TableField(value = "agent_id") private Long agentId;
 
-    @Column(nullable = false, length = 100)
-    private String hostname;
+    @TableField(value = "hostname") private String hostname;
 
-    @Column(nullable = false)
-    private Double cpuUsage;
+    @TableField(value = "cpu_usage") private Double cpuUsage;
 
-    @Column(nullable = false)
-    private Double memoryUsage;
+    @TableField(value = "memory_usage") private Double memoryUsage;
 
-    @Column(nullable = false)
-    private Double diskUsage;
+    @TableField(value = "disk_usage") private Double diskUsage;
 
+    @TableField(value = "gpu_usage", updateStrategy = FieldStrategy.ALWAYS)
     private Double gpuUsage;
 
-    @Column(nullable = false)
-    private Double networkInMbps;
+    @TableField(value = "network_in_mbps") private Double networkInMbps;
 
-    @Column(nullable = false)
-    private Double networkOutMbps;
+    @TableField(value = "network_out_mbps") private Double networkOutMbps;
 
-    @Column(nullable = false)
-    private Instant collectedAt;
+    @TableField(value = "collected_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant collectedAt;
 
-    @Column(nullable = false)
-    private Instant receivedAt;
+    @TableField(value = "received_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant receivedAt;
 
     public Long getId() {
         return id;

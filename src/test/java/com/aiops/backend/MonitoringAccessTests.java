@@ -36,7 +36,7 @@ import com.aiops.backend.service.AgentAccessService.EnrollmentResult;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-import jakarta.persistence.EntityManager;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -48,7 +48,7 @@ class MonitoringAccessTests {
     @Autowired private AgentAccessService agents;
     @Autowired private HostMetricSampleRepository hostMetrics;
     @Autowired private MetricRepository legacyMetrics;
-    @Autowired private EntityManager entityManager;
+    @Autowired private JdbcTemplate jdbc;
     @Value("${aiops.jwt.secret}") private String jwtSecret;
 
     private UserEntity account;
@@ -57,7 +57,7 @@ class MonitoringAccessTests {
 
     @BeforeEach
     void prepareUserAndNode() {
-        account = users.saveAndFlush(new UserEntity("monitor-reader", "unused-test-password-hash"));
+        account = users.save(new UserEntity("monitor-reader", "unused-test-password-hash"));
         jwt = jwtService.issue(account.getId(), account.getUsername());
         target = enroll("target");
     }
@@ -143,16 +143,13 @@ class MonitoringAccessTests {
 
     @Test
     void disabledUserJwtCannotReadUserData() throws Exception {
-        entityManager.createQuery("update UserEntity u set u.status = 'DISABLED' where u.id = :id")
-                .setParameter("id", account.getId()).executeUpdate();
-        entityManager.clear();
+        jdbc.update("update sys_user set status = ? where id = ?", "DISABLED", account.getId());
         assertUnauthorized(jwt);
     }
 
     @Test
     void deletedUserJwtCannotReadUserData() throws Exception {
         users.delete(account);
-        users.flush();
         assertUnauthorized(jwt);
     }
 

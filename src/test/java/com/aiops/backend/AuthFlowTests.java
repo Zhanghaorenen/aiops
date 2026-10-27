@@ -26,7 +26,7 @@ class AuthFlowTests {
     @Test
     @Transactional
     void loginIssuesJwtAndProtectsUserEndpoints() throws Exception {
-        users.saveAndFlush(new UserEntity("auth-test", passwordEncoder.encode("a-long-test-password")));
+        users.save(new UserEntity("auth-test", passwordEncoder.encode("a-long-test-password")));
 
         mvc.perform(get("/api/servers")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/agent/heartbeat").contentType(MediaType.APPLICATION_JSON)

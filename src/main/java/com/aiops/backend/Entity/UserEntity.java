@@ -1,38 +1,31 @@
 package com.aiops.backend.entity;
 
 import java.time.Instant;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.aiops.backend.persistence.UtcInstantTypeHandler;
+import org.apache.ibatis.type.JdbcType;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
 
-@Entity
-@Table(name = "sys_user")
+@TableName(value = "sys_user", autoResultMap = true)
 public class UserEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 64)
-    private String username;
+    @TableField(value = "username") private String username;
 
-    @Column(name = "password_hash", nullable = false, length = 100)
-    private String passwordHash;
+    @TableField(value = "password_hash") private String passwordHash;
 
-    @Column(nullable = false, length = 16)
-    private String status;
+    @TableField(value = "status") private String status;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
+    @TableField(value = "created_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class, updateStrategy = FieldStrategy.NEVER) private Instant createdAt;
 
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
+    @TableField(value = "updated_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant updatedAt;
     // Email persistence requires a matching Flyway migration before it can be enabled.
-    @Transient
+    @TableField(exist = false)
     private String email;
     protected UserEntity() {}
 

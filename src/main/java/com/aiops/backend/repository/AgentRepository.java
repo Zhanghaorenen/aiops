@@ -1,12 +1,17 @@
 package com.aiops.backend.repository;
 
+import com.aiops.backend.entity.AgentEntity;
+import com.aiops.backend.mapper.AgentMapper;
+import org.springframework.stereotype.Repository;
 import java.util.List;
 
-import org.springframework.data.jpa.repository.JpaRepository;
+@Repository
+public class AgentRepository extends MapperRepository<AgentEntity, AgentMapper> {
+    public AgentRepository(AgentMapper mapper) {
+        super(mapper, AgentEntity::getId);
+    }
 
-import com.aiops.backend.entity.AgentEntity;
-
-public interface AgentRepository extends JpaRepository<AgentEntity, Long> {
-
-    List<AgentEntity> findAllByOrderByIdAsc();
+    public List<AgentEntity> findAllByOrderByIdAsc() {
+        return findAll();
+    }
 }

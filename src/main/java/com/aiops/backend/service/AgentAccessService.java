@@ -7,7 +7,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.List;
 
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,6 +57,7 @@ public class AgentAccessService {
                 .filter(value -> value.isUsableAt(now))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "注册令牌无效或已过期"));
         token.markUsed(now);
+        tokens.save(token);
         NodeEntity node = nodes.findByNodeKey(request.nodeKey()).orElseGet(() ->
                 nodes.save(new NodeEntity(request.nodeKey(), request.displayName(), request.hostname(),
                         request.ip(), request.osName(), request.osVersion(), request.architecture(),
@@ -68,10 +68,11 @@ public class AgentAccessService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Agent 标识已绑定其他节点");
             }
             existing.rotateCredential(hash(credential), request.agentVersion(), now);
-            return existing;
+            return agents.save(existing);
         }).orElseGet(() -> agents.save(new OpsAgentEntity(node.getId(), request.agentKey(),
                 hash(credential), request.agentVersion(), now)));
         node.markOnline(now);
+        nodes.save(node);
         return new EnrollmentResult(node.getId(), agent.getId(), credential);
     }
 
@@ -81,7 +82,11 @@ public class AgentAccessService {
         OpsAgentEntity agent = agents.findById(agentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
         agent.heartbeat(now, version);
-        nodes.findById(agent.getNodeId()).ifPresent(node -> node.markOnline(now));
+        agents.save(agent);
+        nodes.findById(agent.getNodeId()).ifPresent(node -> {
+            node.markOnline(now);
+            nodes.save(node);
+        });
     }
 
     @Transactional
@@ -92,7 +97,11 @@ public class AgentAccessService {
         Instant now = Instant.now();
         Instant collectedAt = request.collectedAt() == null ? now : request.collectedAt();
         agent.heartbeat(now, null);
-        nodes.findById(agent.getNodeId()).ifPresent(node -> node.markOnline(now));
+        agents.save(agent);
+        nodes.findById(agent.getNodeId()).ifPresent(node -> {
+            node.markOnline(now);
+            nodes.save(node);
+        });
         return metrics.save(new HostMetricSampleEntity(agent.getNodeId(), agentId,
                 request.cpuPercent(), request.memoryTotalBytes(), request.memoryUsedBytes(),
                 percent(request.memoryUsedBytes(), request.memoryTotalBytes()), request.diskTotalBytes(),
@@ -112,7 +121,7 @@ public class AgentAccessService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "时间范围无效");
         }
         return metrics.findAllByNodeIdAndCollectedAtBetweenOrderByCollectedAtAscIdAsc(
-                nodeId, from, to, PageRequest.of(0, Math.min(Math.max(limit, 1), 1000)));
+                nodeId, from, to, Math.min(Math.max(limit, 1), 1000));
     }
 
     public OpsAgentEntity authenticate(String credential) {
@@ -126,9 +135,15 @@ public class AgentAccessService {
         Instant cutoff = Instant.now().minusSeconds(90);
         Instant now = Instant.now();
         agents.findAllByStatusAndLastHeartbeatAtBefore("ONLINE", cutoff)
-                .forEach(agent -> agent.markOffline(now));
+                .forEach(agent -> {
+                    agent.markOffline(now);
+                    agents.save(agent);
+                });
         nodes.findAllByStatusAndLastSeenAtBefore("ONLINE", cutoff)
-                .forEach(node -> node.markOffline(now));
+                .forEach(node -> {
+                    node.markOffline(now);
+                    nodes.save(node);
+                });
     }
 
     private void validate(MetricRequest value) {

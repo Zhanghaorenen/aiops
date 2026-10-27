@@ -3,6 +3,9 @@
 ## MySQL
 
 The application uses MySQL by default. Schema changes are managed by Flyway.
+The persistence layer uses MyBatis-Plus 3.5.18 (Spring Boot 4 starter), with
+`Entity → Mapper → Repository → Service` mappings for the existing tables.
+See [the migration and learning guide](docs/mybatis-plus-migration.md).
 
 The default connection can create the database automatically. If you prefer to create it manually:
 

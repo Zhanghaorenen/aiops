@@ -1,32 +1,32 @@
 package com.aiops.backend.entity;
 
 import java.time.Instant;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.aiops.backend.persistence.UtcInstantTypeHandler;
+import org.apache.ibatis.type.JdbcType;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 
-@Entity
-@Table(name = "ops_node")
+@TableName(value = "ops_node", autoResultMap = true)
 public class NodeEntity {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(value = "id", type = IdType.AUTO)
     private Long id;
-    @Column(name = "node_key", nullable = false, unique = true, length = 100) private String nodeKey;
-    @Column(name = "display_name", nullable = false, length = 160) private String displayName;
-    @Column(nullable = false, length = 160) private String hostname;
-    @Column(length = 64) private String ip;
-    @Column(name = "os_name", length = 120) private String osName;
-    @Column(name = "os_version", length = 160) private String osVersion;
-    @Column(length = 80) private String architecture;
-    @Column(name = "cpu_cores") private Integer cpuCores;
-    @Column(name = "memory_bytes") private Long memoryBytes;
-    @Column(nullable = false, length = 16) private String status;
-    @Column(name = "last_seen_at") private Instant lastSeenAt;
-    @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
-    @Column(name = "updated_at", nullable = false) private Instant updatedAt;
+    @TableField(value = "node_key") private String nodeKey;
+    @TableField(value = "display_name") private String displayName;
+    @TableField(value = "hostname") private String hostname;
+    @TableField(value = "ip", updateStrategy = FieldStrategy.ALWAYS) private String ip;
+    @TableField(value = "os_name", updateStrategy = FieldStrategy.ALWAYS) private String osName;
+    @TableField(value = "os_version", updateStrategy = FieldStrategy.ALWAYS) private String osVersion;
+    @TableField(value = "architecture", updateStrategy = FieldStrategy.ALWAYS) private String architecture;
+    @TableField(value = "cpu_cores", updateStrategy = FieldStrategy.ALWAYS) private Integer cpuCores;
+    @TableField(value = "memory_bytes", updateStrategy = FieldStrategy.ALWAYS) private Long memoryBytes;
+    @TableField(value = "status") private String status;
+    @TableField(value = "last_seen_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class, updateStrategy = FieldStrategy.ALWAYS) private Instant lastSeenAt;
+    @TableField(value = "created_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class, updateStrategy = FieldStrategy.NEVER) private Instant createdAt;
+    @TableField(value = "updated_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant updatedAt;
 
     protected NodeEntity() {}
 

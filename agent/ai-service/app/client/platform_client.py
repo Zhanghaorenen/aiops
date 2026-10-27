@@ -36,7 +36,7 @@ class PlatformClient:
         if type(value) is not int or value < 1:
             raise ValueError("server_id 必须为大于 0 的整数")
         return value
-
+    ##验证是该用户
     async def get_current_user(self) -> dict:
         return await self._get("/api/auth/me", dict)
 

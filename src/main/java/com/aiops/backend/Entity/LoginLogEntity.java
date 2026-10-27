@@ -1,23 +1,23 @@
 package com.aiops.backend.entity;
 
 import java.time.Instant;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.aiops.backend.persistence.UtcInstantTypeHandler;
+import org.apache.ibatis.type.JdbcType;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 
-@Entity
-@Table(name = "sys_login_log")
+@TableName(value = "sys_login_log", autoResultMap = true)
 public class LoginLogEntity {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(value = "id", type = IdType.AUTO)
     private Long id;
-    @Column(nullable = false, length = 64) private String username;
-    @Column(nullable = false) private boolean success;
-    @Column(name = "remote_ip", length = 64) private String remoteIp;
-    @Column(name = "created_at", nullable = false) private Instant createdAt;
+    @TableField(value = "username") private String username;
+    @TableField(value = "success") private boolean success;
+    @TableField(value = "remote_ip", updateStrategy = FieldStrategy.ALWAYS) private String remoteIp;
+    @TableField(value = "created_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class, updateStrategy = FieldStrategy.NEVER) private Instant createdAt;
 
     protected LoginLogEntity() {}
     public LoginLogEntity(String username, boolean success, String remoteIp) {
@@ -26,4 +26,5 @@ public class LoginLogEntity {
         this.remoteIp = remoteIp;
         this.createdAt = Instant.now();
     }
+    public Long getId() { return id; }
 }

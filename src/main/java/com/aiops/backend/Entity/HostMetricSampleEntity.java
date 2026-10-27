@@ -1,29 +1,28 @@
 package com.aiops.backend.entity;
 
 import java.time.Instant;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.aiops.backend.persistence.UtcInstantTypeHandler;
+import org.apache.ibatis.type.JdbcType;
 import java.math.BigDecimal;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 
-@Entity
-@Table(name = "metric_host_sample")
+@TableName(value = "metric_host_sample", autoResultMap = true)
 public class HostMetricSampleEntity {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
-    @Column(name = "node_id", nullable = false) private Long nodeId;
-    @Column(name = "agent_id", nullable = false) private Long agentId;
-    @Column(name = "cpu_percent", nullable = false, precision = 5, scale = 2) private BigDecimal cpuPercent;
-    @Column(name = "memory_total_bytes", nullable = false) private Long memoryTotalBytes;
-    @Column(name = "memory_used_bytes", nullable = false) private Long memoryUsedBytes;
-    @Column(name = "memory_percent", nullable = false, precision = 5, scale = 2) private BigDecimal memoryPercent;
-    @Column(name = "disk_total_bytes", nullable = false) private Long diskTotalBytes;
-    @Column(name = "disk_used_bytes", nullable = false) private Long diskUsedBytes;
-    @Column(name = "disk_percent", nullable = false, precision = 5, scale = 2) private BigDecimal diskPercent;
-    @Column(name = "collected_at", nullable = false) private Instant collectedAt;
-    @Column(name = "received_at", nullable = false) private Instant receivedAt;
+    @TableId(value = "id", type = IdType.AUTO) private Long id;
+    @TableField(value = "node_id") private Long nodeId;
+    @TableField(value = "agent_id") private Long agentId;
+    @TableField(value = "cpu_percent") private BigDecimal cpuPercent;
+    @TableField(value = "memory_total_bytes") private Long memoryTotalBytes;
+    @TableField(value = "memory_used_bytes") private Long memoryUsedBytes;
+    @TableField(value = "memory_percent") private BigDecimal memoryPercent;
+    @TableField(value = "disk_total_bytes") private Long diskTotalBytes;
+    @TableField(value = "disk_used_bytes") private Long diskUsedBytes;
+    @TableField(value = "disk_percent") private BigDecimal diskPercent;
+    @TableField(value = "collected_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant collectedAt;
+    @TableField(value = "received_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant receivedAt;
     protected HostMetricSampleEntity() {}
     public HostMetricSampleEntity(Long nodeId, Long agentId, Double cpuPercent, Long memoryTotalBytes,
             Long memoryUsedBytes, Double memoryPercent, Long diskTotalBytes, Long diskUsedBytes,

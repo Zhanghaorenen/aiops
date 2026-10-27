@@ -1,18 +1,26 @@
 package com.aiops.backend.repository;
 
+import com.aiops.backend.entity.MetricEntity;
+import com.aiops.backend.mapper.MetricMapper;
+import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
+@Repository
+public class MetricRepository extends MapperRepository<MetricEntity, MetricMapper> {
+    public MetricRepository(MetricMapper mapper) {
+        super(mapper, MetricEntity::getId);
+    }
 
-import com.aiops.backend.entity.MetricEntity;
+    public List<MetricEntity> findAllByOrderByCollectedAtDescIdDesc(int limit) {
+        return mapper.findRecent(boundedLimit(limit, 200));
+    }
 
-public interface MetricRepository extends JpaRepository<MetricEntity, Long> {
+    public Optional<MetricEntity> findTopByAgentIdOrderByCollectedAtDescIdDesc(Long agentId) {
+        return mapper.findByAgent(agentId, 1).stream().findFirst();
+    }
 
-    List<MetricEntity> findAllByOrderByCollectedAtDescIdDesc(Pageable pageable);
-
-    Optional<MetricEntity> findTopByAgentIdOrderByCollectedAtDescIdDesc(Long agentId);
-
-    List<MetricEntity> findAllByAgentIdOrderByCollectedAtDescIdDesc(Long agentId, Pageable pageable);
+    public List<MetricEntity> findAllByAgentIdOrderByCollectedAtDescIdDesc(Long agentId, int limit) {
+        return mapper.findByAgent(agentId, boundedLimit(limit, 200));
+    }
 }

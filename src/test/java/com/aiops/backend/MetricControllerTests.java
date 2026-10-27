@@ -35,7 +35,7 @@ class MetricControllerTests {
 
     @BeforeEach
     void prepare() {
-        UserEntity account = users.saveAndFlush(new UserEntity("metric-reader", "unused-test-password-hash"));
+        UserEntity account = users.save(new UserEntity("metric-reader", "unused-test-password-hash"));
         authorization = "Bearer " + jwtService.issue(account.getId(), account.getUsername());
         AgentEntity agent = new AgentEntity();
         agent.setName("legacy-agent");

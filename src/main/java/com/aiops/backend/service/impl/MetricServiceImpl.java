@@ -3,7 +3,6 @@ package com.aiops.backend.service.impl;
 import java.time.Instant;
 import java.util.List;
 
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,7 +52,7 @@ public class MetricServiceImpl implements MetricService {
     @Transactional(readOnly = true)
     public List<MetricEntity> listRecentMetrics(int limit) {
         int pageSize = Math.min(Math.max(limit, 1), MAX_RECENT_LIMIT);
-        return metricRepository.findAllByOrderByCollectedAtDescIdDesc(PageRequest.of(0, pageSize));
+        return metricRepository.findAllByOrderByCollectedAtDescIdDesc(pageSize);
     }
 
     @Override
@@ -68,7 +67,7 @@ public class MetricServiceImpl implements MetricService {
     public List<MetricEntity> getMetricHistoryByAgentId(Long agentId) {
         agentService.getAgentById(requireAgentId(agentId));
         return metricRepository.findAllByAgentIdOrderByCollectedAtDescIdDesc(
-                agentId, PageRequest.of(0, MAX_RECENT_LIMIT));
+                agentId, MAX_RECENT_LIMIT);
     }
 
     @Override

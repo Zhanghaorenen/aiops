@@ -144,11 +144,11 @@ GPU 和集群接口未闭环时会明确报未实现，不能调用 AI 服务本
 | `ServerController/ServerServiceImpl` | 资产列表和详情及其最新指标摘要 |
 | `ServerMetricController` | 按节点ID读取最新采样和时间范围历史 |
 | `AgentAccessService` | 限时注册令牌、注册和采样写入，仍是正式节点采样链路 |
-| `NodeRepository/HostMetricSampleRepository` | JPA 查询节点与 `metric_host_sample` |
+| `NodeRepository/HostMetricSampleRepository` | 通过 MyBatis-Plus Mapper 查询节点与 `metric_host_sample` |
 | `MetricController/MetricServiceImpl` | 保留旧原型 Agent 指标接口，不与正式节点ID混用 |
 
 Controller 处理 URL 与请求；Service 处理业务；Repository 查询数据库；Entity 表示数据库记录。
-JPA 的 `ddl-auto=validate` 只核对结构，Flyway V1–V4 负责迁移。本阶段没有新增表。
+当前持久层已从 JPA 迁移为 MyBatis-Plus，Flyway V1–V4 仍负责迁移。本阶段没有新增表。详见 `mybatis-plus-migration.md`；阶段 A 报告中的 JPA 说明是该阶段交付时的历史记录。
 `UserEntity.email` 暂不持久化；公开注册、邮箱迁移和更细的数据权限都未完成，不能从字段存在推断功能已上线。
 旧 GPU 字段仍保留；没有新增 GPU 表或重新定义监控数据源。
 
@@ -167,7 +167,7 @@ JPA 的 `ddl-auto=validate` 只核对结构，Flyway V1–V4 负责迁移。本�
 | `agent/ai-service/tests/test_chat.py` | 真实 FastAPI、Pydantic、SDK和工具循环；HTTPX模拟平台/模型响应 |
 | `tests/live_smoke.py` | 真实 Java/MySQL、真实主机采样；模型仍为明确标注的 HTTP fixture |
 | `frontend/tests/chat.test.mjs` | 请求上下文、取消/重试/身份变化、转义渲染与代理分流 |
-| `MonitoringAccessTests` | 真实 Spring Security/JPA，使用 H2；验证多种无效凭证和正式上报读取 |
+| `MonitoringAccessTests` | 真实 Spring Security/MyBatis-Plus，使用 H2；验证多种无效凭证和正式上报读取 |
 | `MetricControllerTests/MetricServiceTests` | 原型历史、详情、GPU字段保留与未实现集群的501响应 |
 
 建议先运行一个测试，再给相应函数加断点。不要把“模拟模型返回 tool_calls”理解成“真实模型已学会诊断”。
@@ -178,7 +178,7 @@ JPA 的 `ddl-auto=validate` 只核对结构，Flyway V1–V4 负责迁移。本�
 - Python：包相对导入、类型注解、dataclass、字典白名单、JSON编解码、异常分类、async/await、异步资源释放。
 - FastAPI：APIRouter、Depends、HTTPBearer、Pydantic约束、响应模型、应用工厂、ASGITransport测试。
 - 模型协议：Chat Completions消息角色、工具JSON Schema、tool_calls和tool_call_id、有限循环与超时。
-- Spring Boot：MVC路由、Spring Security角色校验、JWT、事务、JPA查询和Flyway迁移。
+- Spring Boot：MVC路由、Spring Security角色校验、JWT、事务、MyBatis-Plus Mapper/Repository查询和Flyway迁移。
 - Vue：ref/computed、组合式函数、Pinia身份状态、AbortController、HTML文本转义与Vite代理。
 - Agent：注册凭证和用户JWT分离、真实采样、采集时间与接收时间分离、断网重试。
 

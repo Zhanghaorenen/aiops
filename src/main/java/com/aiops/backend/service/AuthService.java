@@ -58,6 +58,7 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "新密码长度须为 12 至 72 个字符");
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        users.save(user);
     }
     @Transactional
     public void register(String username, String password) {

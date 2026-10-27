@@ -21,9 +21,9 @@ $env:AIOPS_ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $initialPass
 
 ## 当前状态与命令
 
-当前 `pom.xml` 使用 Spring Boot 4.1.1、Java 17、WebMVC、Data JPA、Spring Security、Flyway、MySQL Connector；测试使用 H2。执行 `.\mvnw.cmd test`。
+当前 `pom.xml` 使用 Spring Boot 4.1.1、Java 17、WebMVC、MyBatis-Plus 3.5.18、Spring Security、Flyway、MySQL Connector；测试使用 H2 并运行与生产相同的 Flyway V1–V4。执行 `.\mvnw.cmd test`。
 
-Flyway V1-V4 初始化认证、节点、Agent 注册凭证、主机指标并兼容旧原型表；JPA 使用 `ddl-auto=validate`。旧表数据不会自动转入新领域模型。管理员仅在同时配置 `AIOPS_ADMIN_USERNAME` 与 12 至 72 字符的 `AIOPS_ADMIN_PASSWORD` 时创建。注册令牌由已登录用户签发，有效期 30 分钟且只能使用一次；Agent 密钥和注册令牌只以 SHA-256 摘要存库。Agent 客户端位于 `agent/`，Vue 3 控制台位于 `frontend/`，页面与组件说明见 `frontend/README.md`。
+Flyway V1-V4 初始化认证、节点、Agent 注册凭证、主机指标并兼容旧原型表；MyBatis-Plus 负责映射及 SQL 执行，不自动建表或校验全部表结构。旧表数据不会自动转入新领域模型。管理员仅在同时配置 `AIOPS_ADMIN_USERNAME` 与 12 至 72 字符的 `AIOPS_ADMIN_PASSWORD` 时创建。注册令牌由已登录用户签发，有效期 30 分钟且只能使用一次；Agent 密钥和注册令牌只以 SHA-256 摘要存库。Agent 客户端位于 `agent/`，Vue 3 控制台位于 `frontend/`，页面与组件说明见 `frontend/README.md`。
 
 ## 前端
 
@@ -45,4 +45,7 @@ Vite 默认地址为 `http://localhost:5173`，后端 CORS 默认允许该来源
 - 新接口使用 DTO/VO，不直接暴露实体或凭证摘要。
 - 数据库时间按 UTC 存储；HTTP 传输 ISO-8601 时间。
 - 修改 schema 只通过版本化迁移；高频指标查询必须有时间边界和最大条数。
+- Service 的 `@Transactional` 保留，但对象修改不会自动写入数据库，必须调用 Repository 的保存方法。
+- 新实体使用 `@TableName`、`@TableId(type = IdType.AUTO)`；Instant 字段使用 `UtcInstantTypeHandler`，写入 UTC `DATETIME(6)`。
+- MyBatis 一级缓存设为 `STATEMENT`，防止同一事务中用户禁用或 Agent 凭证轮换后读取过期结果。
 

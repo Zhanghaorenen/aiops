@@ -1,45 +1,36 @@
 package com.aiops.backend.entity;
 
 import java.time.Instant;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.aiops.backend.persistence.UtcInstantTypeHandler;
+import org.apache.ibatis.type.JdbcType;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 
-@Entity
-@Table(name = "agents")
+@TableName(value = "agents", autoResultMap = true)
 public class AgentEntity {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    @Column(nullable = false, length = 100)
-    private String name;
+    @TableField(value = "name") private String name;
 
-    @Column(nullable = false, length = 100)
-    private String hostname;
+    @TableField(value = "hostname") private String hostname;
 
-    @Column(nullable = false, length = 64)
-    private String ip;
+    @TableField(value = "ip") private String ip;
 
-    @Column(nullable = false, length = 32)
-    private String status;
+    @TableField(value = "status") private String status;
 
-    @Column(nullable = false, length = 32)
-    private String version;
+    @TableField(value = "version") private String version;
 
-    @Column(nullable = false)
-    private Instant lastHeartbeatAt;
+    @TableField(value = "last_heartbeat_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant lastHeartbeatAt;
 
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt;
+    @TableField(value = "created_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class, updateStrategy = FieldStrategy.NEVER) private Instant createdAt;
 
-    @Column(nullable = false)
-    private Instant updatedAt;
+    @TableField(value = "updated_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant updatedAt;
 
     public AgentEntity() {
     }

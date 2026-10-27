@@ -1,11 +1,18 @@
 package com.aiops.backend.repository;
 
-import java.util.Optional;
-
-import org.springframework.data.jpa.repository.JpaRepository;
-
 import com.aiops.backend.entity.UserEntity;
+import com.aiops.backend.mapper.UserMapper;
+import org.springframework.stereotype.Repository;
+import java.util.Optional;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
-public interface UserRepository extends JpaRepository<UserEntity, Long> {
-    Optional<UserEntity> findByUsername(String username);
+@Repository
+public class UserRepository extends MapperRepository<UserEntity, UserMapper> {
+    public UserRepository(UserMapper mapper) {
+        super(mapper, UserEntity::getId);
+    }
+
+    public Optional<UserEntity> findByUsername(String username) {
+        return Optional.ofNullable(mapper.selectOne(new QueryWrapper<UserEntity>().eq("username", username)));
+    }
 }

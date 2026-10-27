@@ -14,7 +14,6 @@ import org.springframework.web.server.ResponseStatusException;
 import com.aiops.backend.entity.HostMetricSampleEntity;
 import com.aiops.backend.repository.HostMetricSampleRepository;
 import com.aiops.backend.repository.NodeRepository;
-import org.springframework.data.domain.PageRequest;
 
 @RestController
 @RequestMapping("/api/servers/{nodeId}/metrics")
@@ -42,7 +41,7 @@ public class ServerMetricController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "时间范围无效");
         }
         return metrics.findAllByNodeIdAndCollectedAtBetweenOrderByCollectedAtAscIdAsc(
-                nodeId, from, to, PageRequest.of(0, Math.min(Math.max(limit, 1), 1440)));
+                nodeId, from, to, Math.min(Math.max(limit, 1), 1440));
     }
 
     private void ensureNode(Long nodeId) {
