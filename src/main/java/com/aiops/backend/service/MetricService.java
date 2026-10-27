@@ -3,6 +3,7 @@ package com.aiops.backend.service;
 import java.util.List;
 
 import com.aiops.backend.entity.MetricEntity;
+import com.aiops.backend.entity.AgentEntity;
 
 public interface MetricService {
 
@@ -14,6 +15,7 @@ public interface MetricService {
     List<MetricEntity> getMetricHistoryByAgentId(Long agentId);
     AgentDetails getAgentDetails(Long agentId);
     AgentOverview getAgentOverview(Long agentId);
-    ClusterOverview getClusterOverview(Long clusterId);
-    ClusterDetails getClusterDetails(Long clusterId);
+
+    record AgentDetails(AgentEntity agent, MetricEntity latestMetric) {}
+    record AgentOverview(Long agentId, String hostname, String status, MetricEntity latestMetric) {}
 }

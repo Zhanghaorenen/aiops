@@ -10,14 +10,14 @@ PowerShell 开发环境示例（按本机账户调整）：
 
 ```powershell
 $env:AIOPS_DB_USERNAME = "root"
-$env:AIOPS_DB_PASSWORD = "123456"
-$env:AIOPS_JWT_SECRET = "使用至少32字节的随机开发密钥"
 $env:AIOPS_ADMIN_USERNAME = "admin"
-$env:AIOPS_ADMIN_PASSWORD = "至少12个字符的管理员密码"
-.\mvnw.cmd spring-boot:run
+$initialPassword = Read-Host 'Initial admin password (12-72 characters)' -AsSecureString
+$env:AIOPS_ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $initialPassword).Password
+.\start-local.ps1
 ```
 
-`123456` 是用户指定的本机开发密码示例，不是应用内默认值；生产环境须使用独立强密码和密钥管理。
+启动脚本询问实际 MySQL 密码并生成随机开发 JWT 密钥，同时启动 Java、FastAPI 和 Vue；已有管理员不会被覆盖。
+先按 `agent/ai-service/README.md` 安装 AI 依赖。生产环境须使用独立强密码和受管理的持久签名密钥。
 
 ## 当前状态与命令
 

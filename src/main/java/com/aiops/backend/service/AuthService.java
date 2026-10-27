@@ -59,7 +59,17 @@ public class AuthService {
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
     }
-
+    @Transactional
+    public void register(String username, String password) {
+        if (users.findByUsername(username).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "用户名已存在");
+        }
+        if (password == null || password.length() < 12 || password.length() > 72) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "密码长度须为 12 至 72 个字符");
+        }
+        UserEntity user = new UserEntity(username, passwordEncoder.encode(password));
+        users.save(user);
+    }
     public record LoginResult(String accessToken, Instant expiresAt) {}
     public record UserProfile(Long id, String username, String status) {}
 }

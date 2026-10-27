@@ -10,7 +10,9 @@ const store = useWorkspaceStore()
 const router = useRouter()
 const form = reactive({ username: '', password: '' })
 const busy = ref(false)
+
 async function login() {
+  if (busy.value) return
   busy.value = true
   try {
     await store.login(form)

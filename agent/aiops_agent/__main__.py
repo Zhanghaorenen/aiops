@@ -153,7 +153,6 @@ class Agent:
             "diskUsedBytes": system["disk"]["used"],
             "collectedAt": snapshot["collected_at"],
         }
-        return data
 
     def run(self) -> None:
         if not self.credential:

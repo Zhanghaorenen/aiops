@@ -18,3 +18,14 @@ JSON 使用 UTF-8；时间为 ISO-8601 UTC。用户 API 使用 `Authorization: B
 
 原型 `/api/agents` 管理 CRUD、`/api/metrics` 写入和 `/api/dashboard/summary` 目前统一要求用户 JWT；Agent 新写入使用独立 `/api/agent/*` 凭证。
 
+## 阶段 A AI 接口
+
+FastAPI 提供 `POST /api/chat`，使用现有用户 JWT，输入 `{question,history:[{role,content}]}`，输出 `{answer}`。
+FastAPI先调用Java `/api/auth/me`验证JWT，再把同一JWT用于三个只读Tool；不另存JWT签名密钥。
+`GET /api/ai/health` 返回 `{status,service,llmConfigured}`，可匿名访问，不代表已完成真实模型连接。
+Vite把 `/api/chat` 和 `/api/ai/health` 代理到FastAPI，其他 `/api` 保持Java目标。
+错误码401/403/422/502/503/504/508，响应详情在`detail`字段；完整约束见 `../agent/ai-service/README.md`。
+
+原型历史 `/api/metrics/agents/{agentId}/history` 返回最多200条倒序采样；details返回`{agent,latestMetric}`，overview返回`{agentId,hostname,status,latestMetric}`。
+集群overview/details尚未实现，明确返回501。正式节点历史API与数据库来源保持原样。
+

@@ -8,6 +8,7 @@ import { api, errorMessage, type Server } from './api'
 import { demoServers } from './demo'
 import { useWorkspaceStore } from './stores/workspace'
 import { formatTime } from './utils/format'
+import { RobotOutlined } from '@ant-design/icons-vue'
 import LoginView from './views/LoginView.vue'
 
 const store = useWorkspaceStore()
@@ -69,7 +70,8 @@ watch([() => store.authenticated, () => store.demo, () => store.token, () => sto
 
 <template>
   <a-config-provider :locale="zhCN" :theme="theme">
-    <LoginView v-if="!store.authenticated" />
+    <RouterView v-if="route.meta.public" />
+    <LoginView v-else-if="!store.authenticated" />
     <div v-else class="console-shell">
       <aside class="navigation">
         <RouterLink class="brand" to="/overview"><SafetyCertificateOutlined /><span>AIOps<small>运维工作台</small></span></RouterLink>
@@ -79,6 +81,7 @@ watch([() => store.authenticated, () => store.demo, () => store.token, () => sto
           <a-menu-item key="servers"><template #icon><DesktopOutlined /></template>服务器资源</a-menu-item>
           <a-menu-item key="access"><template #icon><ApiOutlined /></template>Agent 接入</a-menu-item>
           <a-menu-item key="settings"><template #icon><SettingOutlined /></template>账户设置</a-menu-item>
+          <a-menu-item key="ai"><template #icon><RobotOutlined /></template>AI 智能运维</a-menu-item>
         </a-menu>
         <div class="nav-footer"><span class="connection-dot" :class="{ bad: store.error }" />{{ store.demo ? '演示工作空间' : store.error ? '连接异常' : '本地工作空间' }}<small>Agent Platform / V0.1</small></div>
       </aside>

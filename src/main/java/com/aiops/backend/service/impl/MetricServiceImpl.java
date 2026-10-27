@@ -63,9 +63,33 @@ public class MetricServiceImpl implements MetricService {
                 .orElseThrow(() -> new ResourceNotFoundException("Metric not found for agent: " + agentId));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<MetricEntity> getMetricHistoryByAgentId(Long agentId) {
+        agentService.getAgentById(requireAgentId(agentId));
+        return metricRepository.findAllByAgentIdOrderByCollectedAtDescIdDesc(
+                agentId, PageRequest.of(0, MAX_RECENT_LIMIT));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AgentDetails getAgentDetails(Long agentId) {
+        AgentEntity agent = agentService.getAgentById(requireAgentId(agentId));
+        return new AgentDetails(agent, metricRepository
+                .findTopByAgentIdOrderByCollectedAtDescIdDesc(agentId).orElse(null));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AgentOverview getAgentOverview(Long agentId) {
+        AgentDetails details = getAgentDetails(agentId);
+        return new AgentOverview(details.agent().getId(), details.agent().getHostname(),
+                details.agent().getStatus(), details.latestMetric());
+    }
+
     private Long requireAgentId(Long agentId) {
-        if (agentId == null) {
-            throw new IllegalArgumentException("agentId is required");
+        if (agentId == null || agentId <= 0) {
+            throw new IllegalArgumentException("agentId must be positive");
         }
         return agentId;
     }
@@ -74,7 +98,7 @@ public class MetricServiceImpl implements MetricService {
         if (value == null) {
             throw new IllegalArgumentException(fieldName + " is required");
         }
-        if (value < 0.0 || value > 100.0) {
+        if (!Double.isFinite(value) || value < 0.0 || value > 100.0) {
             throw new IllegalArgumentException(fieldName + " must be between 0 and 100");
         }
         return value;
@@ -91,7 +115,7 @@ public class MetricServiceImpl implements MetricService {
         if (value == null) {
             throw new IllegalArgumentException(fieldName + " is required");
         }
-        if (value < 0.0) {
+        if (!Double.isFinite(value) || value < 0.0) {
             throw new IllegalArgumentException(fieldName + " must be greater than or equal to 0");
         }
         return value;
@@ -103,7 +127,4 @@ public class MetricServiceImpl implements MetricService {
         }
         return value.trim();
     }
-    public ClusterOverview getClusterOverview(Long clusterId) {
-        // TODO: Implement this method
-        return null;
-    }
+}

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.aiops.backend.entity.MetricEntity;
 import com.aiops.backend.service.MetricService;
@@ -44,33 +45,21 @@ public class MetricController {
     public List<MetricEntity> getMetricHistoryByAgentId(@PathVariable Long agentId) {
         return metricService.getMetricHistoryByAgentId(agentId);
     }
-    /**
-     * 查询“服务器列表、服务器详细信息、GPU进程信息、指标历史数据，服务器概览、集群概览
-     */
     @GetMapping("/agents/{agentId}/details")
-    public MetricEntity getAgentDetails(@PathVariable Long agentId) {
-        // 调用 MetricService 的 getAgentDetails 方法获取服务器详细信息
-        AgentDetails agentDetails = metricService.getAgentDetails(agentId);
-        // 将 AgentDetails 转换为 MetricEntity
-        MetricEntity metricEntity = new MetricEntity();
-       
-        return metricEntity;
+    public MetricService.AgentDetails getAgentDetails(@PathVariable Long agentId) {
+        return metricService.getAgentDetails(agentId);
     }
     @GetMapping("/agents/{agentId}/overview")
-    public MetricEntity getAgentOverview(@PathVariable Long agentId) {
-        AgentOverview agentOverview = metricService.getAgentOverview(agentId);
-        
-        return agentOverview
+    public MetricService.AgentOverview getAgentOverview(@PathVariable Long agentId) {
+        return metricService.getAgentOverview(agentId);
     }
     @GetMapping("/clusters/{clusterId}/overview")
-    public ClusterOverview getClusterOverview(@PathVariable Long clusterId) {
-        ClusterOverview clusterOverview = metricService.getClusterOverview(clusterId);
-        return clusterOverview;
+    public void getClusterOverview(@PathVariable Long clusterId) {
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Cluster monitoring is not implemented");
     }
     @GetMapping("/clusters/{clusterId}/details")
-    public ClusterDetails getClusterDetails(@PathVariable Long clusterId) {
-        ClusterDetails clusterDetails = metricService.getClusterDetails(clusterId);
-        return clusterDetails;
+    public void getClusterDetails(@PathVariable Long clusterId) {
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Cluster monitoring is not implemented");
     }
     
 }

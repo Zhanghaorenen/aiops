@@ -2,6 +2,7 @@ package com.aiops.backend.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Instant;
@@ -73,6 +74,68 @@ class MetricServiceTests {
     @Test
     void latestMetricByAgentThrowsWhenMissing() {
         assertThrows(ResourceNotFoundException.class, () -> metricService.getLatestMetricByAgentId(999L));
+    }
+
+    @Test
+    void historyFiltersAgentAndPreservesGpuInNewestFirstOrder() {
+        AgentEntity first = createAgent("history-01", "ONLINE");
+        AgentEntity second = createAgent("history-02", "ONLINE");
+        Instant time = Instant.parse("2026-09-14T08:00:00Z");
+        MetricEntity latest = metricService.recordMetric(metricFor(first.getId(), time.plusSeconds(60)));
+        MetricEntity older = metricService.recordMetric(metricFor(first.getId(), time));
+        metricService.recordMetric(metricFor(second.getId(), time.plusSeconds(120)));
+
+        List<MetricEntity> history = metricService.getMetricHistoryByAgentId(first.getId());
+
+        assertEquals(List.of(latest.getId(), older.getId()), history.stream().map(MetricEntity::getId).toList());
+        assertEquals(12.0, history.get(0).getGpuUsage());
+        assertEquals(latest.getId(), metricService.getAgentDetails(first.getId()).latestMetric().getId());
+        assertEquals(latest.getId(), metricService.getAgentOverview(first.getId()).latestMetric().getId());
+    }
+
+    @Test
+    void historyIsBoundedToTwoHundredSamples() {
+        AgentEntity agent = createAgent("bounded-01", "ONLINE");
+        Instant time = Instant.parse("2026-09-14T08:00:00Z");
+        for (int index = 0; index < 201; index++) {
+            metricService.recordMetric(metricFor(agent.getId(), time.plusSeconds(index)));
+        }
+
+        List<MetricEntity> history = metricService.getMetricHistoryByAgentId(agent.getId());
+        assertEquals(200, history.size());
+        assertEquals(time.plusSeconds(200), history.get(0).getCollectedAt());
+        assertEquals(time.plusSeconds(1), history.get(199).getCollectedAt());
+    }
+
+    @Test
+    void detailsAndOverviewAllowAgentWithoutSamples() {
+        AgentEntity agent = createAgent("empty-01", "OFFLINE");
+
+        assertEquals(agent.getId(), metricService.getAgentDetails(agent.getId()).agent().getId());
+        assertNull(metricService.getAgentDetails(agent.getId()).latestMetric());
+        assertEquals("OFFLINE", metricService.getAgentOverview(agent.getId()).status());
+        assertNull(metricService.getAgentOverview(agent.getId()).latestMetric());
+        assertEquals(List.of(), metricService.getMetricHistoryByAgentId(agent.getId()));
+    }
+
+    @Test
+    void historyDetailsAndOverviewRejectUnknownAgent() {
+        assertThrows(ResourceNotFoundException.class, () -> metricService.getMetricHistoryByAgentId(Long.MAX_VALUE));
+        assertThrows(ResourceNotFoundException.class, () -> metricService.getAgentDetails(Long.MAX_VALUE));
+        assertThrows(ResourceNotFoundException.class, () -> metricService.getAgentOverview(Long.MAX_VALUE));
+    }
+
+    @Test
+    void nonFinitePercentagesAndNetworkValuesAreRejected() {
+        AgentEntity agent = createAgent("finite-01", "ONLINE");
+        for (double value : new double[] {Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY}) {
+            MetricEntity percent = metricFor(agent.getId(), Instant.now());
+            percent.setGpuUsage(value);
+            assertThrows(IllegalArgumentException.class, () -> metricService.recordMetric(percent));
+            MetricEntity network = metricFor(agent.getId(), Instant.now());
+            network.setNetworkInMbps(value);
+            assertThrows(IllegalArgumentException.class, () -> metricService.recordMetric(network));
+        }
     }
 
     private AgentEntity createAgent(String name, String status) {

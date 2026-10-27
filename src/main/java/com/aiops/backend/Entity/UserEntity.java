@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 
 @Entity
 @Table(name = "sys_user")
@@ -30,12 +31,15 @@ public class UserEntity {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
+    // Email persistence requires a matching Flyway migration before it can be enabled.
+    @Transient
+    private String email;
     protected UserEntity() {}
 
     public UserEntity(String username, String passwordHash) {
         this.username = username;
         this.passwordHash = passwordHash;
+        this.email = null;
         this.status = "ACTIVE";
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;

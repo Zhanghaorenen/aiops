@@ -1,28 +1,30 @@
-"""完整模型调用
-"""
+"""OpenAI-compatible Chat Completions adapter; no model name or key is embedded."""
 
 from openai import AsyncOpenAI
-class LLMClient:
-    def __init__(self, model: str,base_url:str,api_key:str):
-        self.model=model
-        self.client=AsyncOpenAI(
-            base_url=base_url,
-            api_key=api_key,
-            timeout=30
-        )
 
-    async def chat(self,message:list[dict],tools=None):
-        kwargs={
-            "model":self.model,
-            "messages":message
-        }
+
+class ModelResponseError(RuntimeError):
+    pass
+
+
+class LLMClient:
+    def __init__(self, model: str, base_url: str, api_key: str, timeout: float = 30.0,
+                 http_client=None):
+        self.model = model
+        self.client = AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=timeout,
+                                  max_retries=1, http_client=http_client)
+
+    async def chat(self, messages: list[dict], tools=None):
+        kwargs = {"model": self.model, "messages": messages}
         if tools:
-            kwargs["tools"]=tools
-            kwargs['tool_choice']='auto'
-        ## 发生异常时，openai库会自动重试，直到达到最大重试次数
-        completion=await self.client.chat.completions.create(**kwargs)
+            kwargs.update(tools=tools, tool_choice="auto")
+        completion = await self.client.chat.completions.create(**kwargs)
         if not completion.choices:
-            raise ValueError(  "模型没有返回有效结果")
-        return completion.choices[0].message
+            raise ModelResponseError("模型没有返回有效结果")
+        message = completion.choices[0].message
+        if message is None:
+            raise ModelResponseError("模型没有返回有效消息")
+        return message
+
     async def close(self):
         await self.client.close()

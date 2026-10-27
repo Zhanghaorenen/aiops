@@ -38,7 +38,11 @@ public class AuthController {
     public void changePassword(Authentication authentication, @Valid @RequestBody ChangePasswordRequest request) {
         authService.changePassword(authentication.getName(), request.currentPassword(), request.newPassword());
     }
-
+    @PostMapping("/register")
+    @ResponseStatus(HttpStatus.CREATED)
+    public void register(@Valid @RequestBody LoginRequest request) {
+        authService.register(request.username(), request.password());
+    }
     public record LoginRequest(@NotBlank String username, @NotBlank String password) {}
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank String newPassword) {}
     public record LoginResponse(String accessToken, String tokenType, java.time.Instant expiresAt) {}

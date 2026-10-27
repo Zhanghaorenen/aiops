@@ -7,8 +7,8 @@
 - 原型实体仍保留；新增用户、节点资产、Agent 凭证/注册令牌和主机指标实体。
 - V0.1 后端基础：Spring Security、BCrypt、JWT、Flyway、独立节点资产和独立 Agent 凭证。
 - 缺失：指标保留清理和 Agent 接口速率限制；Python Agent 和前端已有最小实现，仍需真实主机和浏览器联调。
-- 当前风险：MySQL 未运行，Flyway 迁移和旧 MySQL 表兼容性尚未做真实数据库验证。
-- 此仓库没有 Git 元数据；`D:\documents\ChatGPT\aiops` 目录仅有空 Git 元数据，不是后端源码目录。
+- 阶段 A 已实际启动 MySQL 并验证本机真实采样写入和用户查询；完整证据、限制见 `stage-a-report.md`。
+- 实际源码和 Git 仓库位于 `D:\work\aiops\backend`，origin 为 Zhanghaorenen/aiops。
 
 ## 目标组件及数据流
 
@@ -17,7 +17,9 @@ flowchart LR
   UI[Vue 3 管理界面] -->|JWT 用户 API| API[Spring Boot API]
   Agent[Python Agent] -->|Agent 凭证| API
   API --> DB[(MySQL 8)]
-  API -. 后续内部 API .-> AI[FastAPI AI Service]
+  UI -->|用户JWT + /api/chat| AI[FastAPI AI Service]
+  AI -->|验证用户JWT / 三个只读Tool| API
+  AI -->|OpenAI兼容接口| LLM[中心模型服务]
 ```
 
 ```mermaid

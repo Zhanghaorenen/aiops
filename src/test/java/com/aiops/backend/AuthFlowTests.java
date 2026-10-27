@@ -60,6 +60,8 @@ class AuthFlowTests {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String agentCredential = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readTree(enrollmentResponse).get("credential").asText();
+        long nodeId = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(enrollmentResponse).get("nodeId").asLong();
 
         mvc.perform(post("/api/agent/heartbeat")
                         .header("Authorization", "Bearer " + agentCredential)
@@ -75,7 +77,7 @@ class AuthFlowTests {
                 .andExpect(status().isAccepted());
         mvc.perform(get("/api/servers").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
-        mvc.perform(get("/api/servers/1/metrics/latest").header("Authorization", "Bearer " + token))
+        mvc.perform(get("/api/servers/" + nodeId + "/metrics/latest").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
 
         String nextTokenResponse = mvc.perform(post("/api/agent/enrollment-tokens")

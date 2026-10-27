@@ -30,7 +30,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/health", "/api/auth/login").permitAll()
                         .requestMatchers("/api/agent/enroll").permitAll()
                         .requestMatchers("/api/agent/heartbeat", "/api/agent/metrics").hasRole("AGENT")
-                        .anyRequest().authenticated())
+                        .anyRequest().hasRole("USER"))
                 .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, exception) ->
                         response.sendError(HttpStatus.UNAUTHORIZED.value())))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)

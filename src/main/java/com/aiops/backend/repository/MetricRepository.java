@@ -13,4 +13,6 @@ public interface MetricRepository extends JpaRepository<MetricEntity, Long> {
     List<MetricEntity> findAllByOrderByCollectedAtDescIdDesc(Pageable pageable);
 
     Optional<MetricEntity> findTopByAgentIdOrderByCollectedAtDescIdDesc(Long agentId);
+
+    List<MetricEntity> findAllByAgentIdOrderByCollectedAtDescIdDesc(Long agentId, Pageable pageable);
 }
