@@ -9,3 +9,6 @@ agent/.aiops-agent/
 .env
 *.log
 hs_err_pid*.log
+# 本地开发环境私有配置
+**/application-dev.properties
+src/main/resources/application-dev.properties
