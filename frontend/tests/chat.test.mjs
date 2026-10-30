@@ -211,6 +211,34 @@ test('AI uses its own baseURL, sends JWT and AbortSignal, and shares unauthorize
   storage.clear()
 })
 
+test('SSE chat transport parses token/tool events and accumulates the final answer', async () => {
+  storage.set('aiops.accessToken', testToken)
+  const originalFetch = globalThis.fetch
+  const events = []
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'http://ai.invalid/api/chat/stream')
+    assert.equal(options.method, 'POST')
+    assert.equal(options.headers.Authorization, `Bearer ${testToken}`)
+    assert.ok(options.signal instanceof AbortSignal)
+    const frames = [
+      { type: 'tool_start', name: 'list_servers' },
+      { type: 'tool_end', name: 'list_servers', ok: true },
+      { type: 'token', text: 'GPU ' },
+      { type: 'token', text: 'healthy' },
+      { type: 'done' },
+    ].map(event => `data: ${JSON.stringify(event)}\n\n`).join('')
+    return new Response(frames, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+  }
+  try {
+    const answer = await apiModule.sendChatStream({ question: 'check', history: [] }, new AbortController().signal, event => events.push(event))
+    assert.deepEqual(answer, { answer: 'GPU healthy' })
+    assert.deepEqual(events.map(event => event.type), ['tool_start', 'tool_end', 'token', 'token', 'done'])
+  } finally {
+    globalThis.fetch = originalFetch
+    storage.clear()
+  }
+})
+
 test('AI view renders model HTML as escaped text, never active elements', async () => {
   const malicious = '<img src=x onerror="alert(1)"><script>alert(2)</script>'
   const pinia = createPinia()
@@ -396,6 +424,11 @@ test('Vite sends chat and AI health to FastAPI while business API stays on Java'
     request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       requests.push({ service, path: request.url, authorization: request.headers.authorization, body })
+      if (service === 'ai' && request.url === '/api/chat/stream') {
+        response.setHeader('Content-Type', 'text/event-stream')
+        response.end('data: {"type":"token","text":"ok"}\n\ndata: {"type":"done"}\n\n')
+        return
+      }
       response.setHeader('Content-Type', 'application/json')
       response.end(JSON.stringify(service === 'ai' && request.url === '/api/ai/health' ? { status: 'ok', service: 'ai-service', llmConfigured: false } : { service }))
     })
@@ -411,10 +444,12 @@ test('Vite sends chat and AI health to FastAPI while business API stays on Java'
     await dev.listen()
     const origin = `http://127.0.0.1:${dev.httpServer.address().port}`
     await fetch(`${origin}/api/chat`, { method: 'POST', headers: { Authorization: `Bearer ${testToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ question: 'test', history: [] }) }).then(response => response.json())
+    const stream = await fetch(`${origin}/api/chat/stream`, { method: 'POST', headers: { Authorization: `Bearer ${testToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ question: 'test', history: [] }) })
+    assert.match(await stream.text(), /"type":"token"/)
     const health = await fetch(`${origin}/api/ai/health`).then(response => response.json())
     await fetch(`${origin}/api/servers`).then(response => response.json())
     assert.equal(health.llmConfigured, false)
-    assert.deepEqual(requests.map(({ service, path }) => ({ service, path })), [{ service: 'ai', path: '/api/chat' }, { service: 'ai', path: '/api/ai/health' }, { service: 'java', path: '/api/servers' }])
+    assert.deepEqual(requests.map(({ service, path }) => ({ service, path })), [{ service: 'ai', path: '/api/chat' }, { service: 'ai', path: '/api/chat/stream' }, { service: 'ai', path: '/api/ai/health' }, { service: 'java', path: '/api/servers' }])
     assert.equal(requests[0].authorization, `Bearer ${testToken}`)
     assert.deepEqual(JSON.parse(requests[0].body), { question: 'test', history: [] })
   } finally {

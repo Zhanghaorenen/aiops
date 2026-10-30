@@ -98,6 +98,22 @@ class GpuTool:
 
         return projected[-limit:]
 
+    async def analyze_gpu_health(self, server_id: int, gpu_id: int) -> dict:
+        """按温度、显存占用等最新指标检查单卡健康状态。"""
+        return await self.gpu_manager.analyze_gpu_health(server_id, gpu_id)
+
+    async def compare_gpu_load(self, server_id: int) -> dict:
+        """比较同一服务器多张 GPU 的利用率并识别负载偏斜。"""
+        return await self.gpu_manager.compare_gpu_load(server_id)
+
+    async def recommend_gpu_placement(
+        self, server_id: int, required_memory_bytes: int = 0, gpu_count: int = 1
+    ) -> dict:
+        """根据最新空闲显存和利用率给出只读 GPU 放置建议，不会启动任务。"""
+        return await self.gpu_manager.recommend_gpu_placement(
+            server_id, required_memory_bytes, gpu_count
+        )
+
     def get_tools(self) -> list:
         """Return LangChain tools ready for ``model.bind_tools(...)``."""
 
@@ -137,10 +153,32 @@ class GpuTool:
                 server_id, gpu_id, metric_name, start_time, end_time, limit
             )
 
+        @tool
+        async def analyze_gpu_health(server_id: int, gpu_id: int) -> dict:
+            """分析指定 GPU 的温度和显存健康指标，返回状态及数据证据。"""
+            return await self.analyze_gpu_health(server_id, gpu_id)
+
+        @tool
+        async def compare_gpu_load(server_id: int) -> dict:
+            """比较服务器上的多张 GPU 利用率，识别负载不均衡。"""
+            return await self.compare_gpu_load(server_id)
+
+        @tool
+        async def recommend_gpu_placement(
+            server_id: int, required_memory_bytes: int = 0, gpu_count: int = 1
+        ) -> dict:
+            """按空闲显存和利用率推荐 GPU；仅提供建议，不执行或预留任务。"""
+            return await self.recommend_gpu_placement(
+                server_id, required_memory_bytes, gpu_count
+            )
+
         return [
             list_gpus,
             get_gpu_status,
             get_gpu_overview,
             get_gpu_processes,
             get_gpu_history,
+            analyze_gpu_health,
+            compare_gpu_load,
+            recommend_gpu_placement,
         ]

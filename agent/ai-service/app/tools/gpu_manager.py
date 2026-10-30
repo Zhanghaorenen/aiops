@@ -10,6 +10,14 @@ if TYPE_CHECKING:
     from ..client.platform_client import PlatformClient
 
 
+class GPUCollectionError(RuntimeError):
+    """The node has not provided a usable GPU sample."""
+
+    def __init__(self, status: str):
+        self.status = status
+        super().__init__(f"GPU 数据状态为 {status}")
+
+
 class GPUManager:
     def __init__(self, platform_client: PlatformClient):
         self.client = platform_client
@@ -31,6 +39,11 @@ class GPUManager:
             "fan_speed": "fanSpeed", "clock_speed": "clockSpeed",
         }
         uuids = info["gpuUuids"]
+        collection_status = info.get("collectionStatus")
+        if not uuids and collection_status != "NO_GPU":
+            raise GPUCollectionError(collection_status or "UNKNOWN")
+        if uuids and collection_status not in (None, "AVAILABLE"):
+            raise GPUCollectionError(collection_status)
         if any(not isinstance(uuid, str) or not uuid.strip() for uuid in uuids):
             raise ValueError("GPU UUID 必须为非空字符串")
         if len(set(uuids)) != len(uuids):
@@ -166,6 +179,54 @@ class GPUManager:
                 "missing_gpu_indices": [gpu["gpu_index"] for gpu in gpus if gpu["utilization"] is None],
                 "suggestions": ["可评估将新任务分配到较空闲 GPU，结合显存容量和任务约束决定。"]
                 if status == "imbalanced" else [], "gpus": gpus}
+
+    async def recommend_gpu_placement(
+        self, server_id: int, required_memory_bytes: int = 0, gpu_count: int = 1
+    ) -> dict:
+        """Return a read-only placement recommendation based on the latest sample."""
+        self._validate_ids(server_id)
+        if type(required_memory_bytes) is not int or required_memory_bytes < 0:
+            raise ValueError("required_memory_bytes 必须为非负整数")
+        if type(gpu_count) is not int or not 1 <= gpu_count <= 16:
+            raise ValueError("gpu_count 必须在 1 至 16 之间")
+
+        gpus = await self.list_gpus(server_id)
+        if not gpus:
+            return {"server_id": server_id, "status": "no_gpu", "recommendations": [],
+                    "message": "该服务器的最新采样确认没有 GPU。"}
+
+        eligible, excluded = [], []
+        for gpu in gpus:
+            free = gpu["gpu_memory_free"]
+            utilization = gpu["utilization"]
+            if free is None or utilization is None:
+                excluded.append({"gpu_index": gpu["gpu_index"], "reason": "missing_capacity_or_utilization"})
+            elif free < required_memory_bytes:
+                excluded.append({"gpu_index": gpu["gpu_index"], "reason": "insufficient_free_memory"})
+            else:
+                total, used = gpu["gpu_memory_total"], gpu["gpu_memory_used"]
+                memory_fraction = used / total if total and used is not None else 1.0
+                eligible.append((utilization, memory_fraction, gpu))
+
+        ranked = [entry[2] for entry in sorted(eligible, key=lambda entry: (entry[0], entry[1]))]
+        selected = ranked[:gpu_count]
+        status = "recommended" if len(selected) == gpu_count else (
+            "insufficient_capacity" if ranked else "insufficient_data")
+        return {
+            "server_id": server_id,
+            "status": status,
+            "requested_gpu_count": gpu_count,
+            "required_memory_bytes_per_gpu": required_memory_bytes,
+            "recommendations": [{
+                "gpu_index": gpu["gpu_index"], "gpu_uuid": gpu["gpu_uuid"],
+                "gpu_name": gpu["gpu_name"], "utilization_percent": gpu["utilization"],
+                "free_memory_bytes": gpu["gpu_memory_free"],
+                "collected_at": gpu["collected_at"],
+            } for gpu in selected],
+            "excluded_gpus": excluded,
+            "execution_performed": False,
+            "message": "这是只读分配建议；尚未预留或启动任何任务。",
+        }
 
     async def _call(self, method: str, *args):
         handler = getattr(self.client, method, None)

@@ -62,6 +62,45 @@ class HttpClientTests(unittest.TestCase):
 
 
 class AgentStateTests(unittest.TestCase):
+    def test_collect_includes_gpu_status_metrics_and_redacted_process_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(make_config(Path(directory) / "state.json"))
+
+            class SnapshotStub:
+                def get_snapshot(self):
+                    return {
+                        "collected_at": "2026-10-30T00:00:00+00:00",
+                        "system": {
+                            "cpu": {"percent": 10.0},
+                            "memory": {"total": 1000, "used": 200},
+                            "disk": {"total": 2000, "used": 300},
+                        },
+                        "gpu_status": "AVAILABLE",
+                        "gpus": [{
+                            "index": 1, "uuid": "GPU-test", "name": "Test GPU",
+                            "memory_total_bytes": 8000, "memory_used_bytes": 2000,
+                            "memory_free_bytes": 6000, "utilization_percent": 25,
+                            "memory_utilization_percent": 30, "temperature_c": 50,
+                            "power_w": 75, "processes": [{
+                                "pid": 123, "name": "worker", "username": "ops",
+                                "gpu_memory_bytes": 1024, "task_type": "compute",
+                                "cmdline": "must-not-upload",
+                            }],
+                        }],
+                        "errors": [],
+                    }
+
+            agent.snapshot_collector = SnapshotStub()
+            payload = agent.collect()
+
+        self.assertEqual(payload["gpuStatus"], "AVAILABLE")
+        self.assertEqual(payload["gpus"][0]["gpuIndex"], 1)
+        self.assertEqual(payload["gpus"][0]["memoryTotalBytes"], 8000)
+        process = payload["gpus"][0]["processes"][0]
+        self.assertEqual(process["gpuMemoryUsageBytes"], 1024)
+        self.assertNotIn("cmdline", process)
+        self.assertNotIn("cmdline", payload["gpus"][0])
+
     def test_state_is_saved_and_reloaded_with_stable_identifiers(self):
         with tempfile.TemporaryDirectory() as directory:
             state_file = Path(directory) / "nested" / "state.json"

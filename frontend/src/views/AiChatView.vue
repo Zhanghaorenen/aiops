@@ -5,14 +5,14 @@ import { useWorkspaceStore } from '../stores/workspace'
 import { characterCount, QUESTION_LIMIT, useAiChat } from '../composables/useAiChat'
 
 const store = useWorkspaceStore()
-const { input, messages, sending, error, notice, pendingQuestion, canRetry, send, cancel, reset } = useAiChat(() => ({ demo: store.demo, token: store.token }))
+const { input, messages, sending, error, notice, pendingQuestion, streamingAnswer, toolActivity, canRetry, send, cancel, reset } = useAiChat(() => ({ demo: store.demo, token: store.token }))
 const messageContainer = ref<HTMLElement | null>(null)
 const confirmation = ref<'new' | 'clear' | null>(null)
 const unavailable = computed(() => store.demo || !store.token)
 const inputLength = computed(() => characterCount(input.value.trim()))
 const invalid = computed(() => inputLength.value > QUESTION_LIMIT)
 
-watch([() => messages.value.length, sending, pendingQuestion, error, notice], async () => {
+watch([() => messages.value.length, sending, pendingQuestion, streamingAnswer, toolActivity, error, notice], async () => {
   await nextTick()
   const element = messageContainer.value
   if (element) element.scrollTop = element.scrollHeight
@@ -50,7 +50,15 @@ function confirmReset() { reset(); confirmation.value = null }
         <div class="chat-bubble">{{ item.content }}</div>
       </article>
       <article v-if="pendingQuestion" class="chat-message user" aria-label="本次问题"><div class="chat-avatar"><UserOutlined /></div><div class="chat-bubble">{{ pendingQuestion }}</div></article>
-      <div v-if="sending" class="chat-message assistant"><div class="chat-avatar"><RobotOutlined /></div><div class="chat-bubble loading-bubble"><a-spin size="small" /><span>正在查询和分析…</span></div></div>
+      <article v-if="sending" class="chat-message assistant" aria-label="AI 正在回复">
+        <div class="chat-avatar"><RobotOutlined /></div>
+        <div class="chat-bubble loading-bubble">
+          <a-spin v-if="!streamingAnswer" size="small" />
+          <span v-if="toolActivity" class="tool-activity" role="status">{{ toolActivity }}</span>
+          <span v-if="streamingAnswer">{{ streamingAnswer }}<span class="stream-cursor" aria-hidden="true">▍</span></span>
+          <span v-else-if="!toolActivity">正在连接智能体…</span>
+        </div>
+      </article>
     </div>
     <a-alert v-if="error" type="error" show-icon closable :message="error" class="chat-notice" role="alert" @close="error = ''" />
     <a-alert v-if="notice" type="info" show-icon :message="notice" class="chat-notice" role="status" />
@@ -89,6 +97,9 @@ function confirmReset() { reset(); confirmation.value = null }
 .chat-bubble { min-width: 0; border-radius: 6px; background: #f3f6f8; padding: 12px 16px; font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
 .user .chat-bubble { background: #e7f4f0; }
 .loading-bubble { display: flex; align-items: center; gap: 10px; color: #647783; }
+.tool-activity { color: #087f78; font-size: 12px; }
+.stream-cursor { display: inline-block; margin-left: 2px; color: #087f78; animation: stream-blink 1s steps(2, start) infinite; }
+@keyframes stream-blink { to { visibility: hidden; } }
 .chat-notice { margin: 12px 24px 0; flex-shrink: 0; overflow-wrap: anywhere; }
 .chat-composer { border-top: 1px solid #edf0f2; padding: 16px 24px; }
 .chat-composer textarea { resize: none; }

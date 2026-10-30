@@ -15,6 +15,7 @@ from app.schemas.chat import ChatRequest
 from app.shcemas.chat import ChatRequest as LegacyChatRequest
 from app.tools.server_manager import ServerManager
 from app.tools.server_tool import ServerTool
+from app.tools.gpu_manager import GPUManager
 
 SERVER = {"id": 41, "name": "unit-host", "status": "ONLINE", "lastSeenAt": "2026-10-27T00:00:00Z"}
 SAMPLE = {"nodeId": 41, "cpuPercent": 56.2, "memoryPercent": 40.0, "diskPercent": 20.0,
@@ -32,6 +33,11 @@ def completion(content=None, calls=None):
     return {"id": "unit-completion", "object": "chat.completion", "created": 1, "model": "unit-model",
             "choices": [{"index": 0, "finish_reason": "tool_calls" if calls else "stop",
                          "message": {"role": "assistant", "content": content, "tool_calls": calls}}]}
+
+
+def streaming_response(*chunks):
+    body = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks) + "data: [DONE]\n\n"
+    return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
 
 
 class ChatTests(unittest.IsolatedAsyncioTestCase):
@@ -101,6 +107,68 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(r.method == "GET" and r.headers["Authorization"] == "Bearer valid" for r in self.backend_requests))
         self.assertTrue(all(p.client.is_closed for p in self.platforms))
         self.assertTrue(all(m.client.is_closed() for m in self.models))
+
+    async def test_streaming_chat_emits_tool_progress_and_answer_tokens(self):
+        tool_delta = {"id": "stream-tool", "object": "chat.completion.chunk", "created": 1,
+                      "model": "unit-model", "choices": [{"index": 0, "finish_reason": "tool_calls",
+                      "delta": {"tool_calls": [{"index": 0, "id": "stream-call", "type": "function",
+                      "function": {"name": "list_servers", "arguments": "{}"}}]}}]}
+        token_one = {"id": "stream-answer", "object": "chat.completion.chunk", "created": 2,
+                     "model": "unit-model", "choices": [{"index": 0, "finish_reason": None,
+                     "delta": {"content": "服务器 "}}]}
+        token_two = {"id": "stream-answer", "object": "chat.completion.chunk", "created": 2,
+                     "model": "unit-model", "choices": [{"index": 0, "finish_reason": "stop",
+                     "delta": {"content": "41 可访问"}}]}
+
+        def model(request, body):
+            return streaming_response(tool_delta) if len(self.model_requests) == 1 else streaming_response(token_one, token_two)
+
+        async with self.build(backend=self.backend, model_handler=model) as client:
+            response = await client.post("/api/chat/stream", headers={"Authorization": "Bearer valid"},
+                                          json={"question": "列出服务器"})
+        self.assertEqual(response.status_code, 200)
+        events = [json.loads(frame.removeprefix("data: "))
+                  for frame in response.text.split("\n\n") if frame.startswith("data: ")]
+        self.assertEqual("".join(event.get("text", "") for event in events if event["type"] == "token"),
+                         "服务器 41 可访问")
+        self.assertEqual([event["type"] for event in events if event["type"].startswith("tool_")],
+                         ["tool_start", "tool_end"])
+        self.assertEqual(events[-1], {"type": "done"})
+
+    async def test_graph_exposes_gpu_health_and_read_only_placement_tools(self):
+        gpu_snapshot = {
+            "serverId": 41, "collectionStatus": "AVAILABLE",
+            "collectedAt": "2026-10-27T00:00:00Z", "receivedAt": "2026-10-27T00:00:01Z",
+            "gpuCount": 1, "gpuIndices": [0], "gpuUuids": ["GPU-test-uuid"],
+            "gpuNames": ["Test GPU"], "gpuMemoryTotal": [10000],
+            "gpuMemoryUsed": [2000], "gpuMemoryFree": [8000],
+            "utilization": [15], "memoryUtilization": [20],
+            "temperature": [45], "powerUsage": [80], "fanSpeed": [30], "clockSpeed": [1200],
+        }
+        def backend(request):
+            self.backend_requests.append(request)
+            if request.headers.get("Authorization") == "Bearer invalid":
+                return httpx.Response(401, json={"message": "unauthorized"})
+            if request.url.path == "/api/auth/me": return httpx.Response(200, json={"id": 1})
+            if request.url.path == "/api/servers/41/gpus": return httpx.Response(200, json=gpu_snapshot)
+            return httpx.Response(404, json={"message": "not found"})
+
+        replies = [completion(calls=[call("recommend_gpu_placement", {
+            "server_id": 41, "required_memory_bytes": 4000, "gpu_count": 1,
+        })]), completion("建议使用 GPU 0")]
+        async with self.build(replies, backend=backend) as client:
+            response = await client.post("/api/chat", headers={"Authorization": "Bearer valid"},
+                                         json={"question": "给 4KB 显存任务推荐 GPU"})
+        self.assertEqual(response.status_code, 200)
+        offered = {item["function"]["name"] for item in self.model_requests[0]["tools"]}
+        self.assertTrue({"analyze_gpu_health", "compare_gpu_load", "recommend_gpu_placement"}.issubset(offered))
+        tool_message = next(item for item in self.model_requests[1]["messages"] if item["role"] == "tool")
+        output = json.loads(tool_message["content"])
+        self.assertTrue(output["ok"])
+        self.assertEqual(output["data"]["status"], "recommended")
+        self.assertFalse(output["data"]["execution_performed"])
+        self.assertEqual([request.url.path for request in self.backend_requests],
+                         ["/api/auth/me", "/api/servers/41/gpus"])
 
     async def test_missing_and_invalid_jwt_never_call_model(self):
         async with self.build(settings=replace(CONFIG, llm_model="")) as client:
@@ -202,15 +270,26 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(query["limit"], "1440")
 
     async def test_gpu_cannot_read_ai_service_local_machine(self):
-        platform = PlatformClient(CONFIG.backend_url, "valid", transport=httpx.MockTransport(self.backend))
+        requests = []
+        def backend(request):
+            requests.append(request)
+            if request.url.path == "/api/servers/41/gpus":
+                return httpx.Response(200, json={"serverId": 41, "collectionStatus": "NO_GPU", "gpuUuids": []})
+            if request.url.path == "/api/servers/41/gpus/0/history":
+                return httpx.Response(200, json=[])
+            return httpx.Response(404)
+
+        platform = PlatformClient(CONFIG.backend_url, "valid", transport=httpx.MockTransport(backend))
         try:
-            with self.assertRaises(NotImplementedError):
-                await ServerManager(platform).get_gpu_process(41, 0)
-            with self.assertRaises(NotImplementedError):
-                await ServerManager(platform).get_gpu_history(41, 0, "from", "to")
+            manager = GPUManager(platform)
+            self.assertEqual(await manager.list_gpus(41), [])
+            self.assertEqual(await manager.get_gpu_history(
+                41, 0, "2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z"), [])
         finally:
             await platform.close()
-        self.assertFalse(self.backend_requests)
+        self.assertEqual([request.url.path for request in requests], [
+            "/api/servers/41/gpus", "/api/servers/41/gpus/0/history",
+        ])
 
     async def test_health_without_model_configuration_is_available(self):
         async with self.build(settings=replace(CONFIG, llm_model="")) as client:

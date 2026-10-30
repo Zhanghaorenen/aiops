@@ -101,6 +101,57 @@ export interface MetricSample {
   receivedAt: string
 }
 
+export interface GpuSnapshot {
+  serverId: number
+  collectionStatus: 'AVAILABLE' | 'NO_GPU' | 'UNAVAILABLE' | 'FAILED' | 'UNKNOWN' | 'UNREPORTED' | string
+  collectedAt: string
+  receivedAt: string
+  gpuCount: number
+  gpuIndices: number[]
+  gpuUuids: string[]
+  gpuNames: Array<string | null>
+  gpuMemoryTotal: Array<number | null>
+  gpuMemoryUsed: Array<number | null>
+  gpuMemoryFree: Array<number | null>
+  utilization: Array<number | null>
+  memoryUtilization: Array<number | null>
+  temperature: Array<number | null>
+  powerUsage: Array<number | null>
+  fanSpeed: Array<number | null>
+  clockSpeed: Array<number | null>
+}
+
+export interface GpuHistorySample {
+  serverId: number
+  gpuIndex: number
+  gpuUuid: string | null
+  gpuName: string | null
+  gpuMemoryTotal: number | null
+  gpuMemoryUsed: number | null
+  gpuMemoryFree: number | null
+  utilization: number | null
+  memoryUtilization: number | null
+  temperature: number | null
+  powerUsage: number | null
+  fanSpeed: number | null
+  clockSpeed: number | null
+  collectedAt: string
+  receivedAt: string
+}
+
+export interface GpuProcess {
+  serverId: number
+  gpuIndex: number
+  gpuUuid?: string | null
+  pid: number
+  processName: string | null
+  username: string | null
+  gpuMemoryUsage: number | null
+  taskType: string | null
+  collectedAt?: string
+  receivedAt?: string
+}
+
 export interface LoginResponse {
   accessToken: string
   tokenType: string
@@ -157,6 +208,12 @@ export interface ChatResponse {
   answer: string
 }
 
+export type ChatStreamEvent =
+  | { type: 'token'; text: string }
+  | { type: 'tool_start' | 'tool_end'; name: string; ok?: boolean }
+  | { type: 'done' }
+  | { type: 'error'; status?: number; message: string }
+
 // 调用中心 AI Service
 export async function sendChat(
   request: ChatRequest,
@@ -176,4 +233,78 @@ export async function sendChat(
     throw new Error('AI 服务返回了无效回答，请重试')
   }
   return response.data
+}
+
+export async function sendChatStream(
+  request: ChatRequest,
+  signal?: AbortSignal,
+  onEvent?: (event: ChatStreamEvent) => void,
+): Promise<ChatResponse> {
+  const base = aiApi.defaults.baseURL ?? ''
+  const response = await fetch(`${base}/api/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...(localStorage.getItem('aiops.accessToken')
+        ? { Authorization: `Bearer ${localStorage.getItem('aiops.accessToken')}` }
+        : {}),
+    },
+    body: JSON.stringify(request),
+    signal,
+  })
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('aiops.accessToken')
+      window.dispatchEvent(new Event('aiops:unauthorized'))
+    }
+    let detail = ''
+    try {
+      const body: unknown = await response.json()
+      if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') detail = body.detail
+    } catch { /* Keep the status based fallback below. */ }
+    const statusText: Record<number, string> = {
+      401: '登录已失效，请重新登录', 403: '没有权限执行此查询', 422: '请求内容不符合要求',
+      502: '模型或平台服务响应异常，请稍后重试', 503: 'AI 服务暂不可用，请稍后重试',
+      504: 'AI 查询超时，请稍后重试', 508: '已达到工具查询次数限制，请缩小问题范围后重试',
+    }
+    throw new Error(detail || statusText[response.status] || '请求失败，请稍后重试')
+  }
+  if (!response.body) throw new Error('AI 服务没有返回流式响应')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let answer = ''
+  let finished = false
+
+  const consumeFrame = (frame: string) => {
+    const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trimStart()).join('\n')
+    if (!data || data === '[DONE]') return
+    let event: ChatStreamEvent
+    try { event = JSON.parse(data) as ChatStreamEvent }
+    catch { throw new Error('AI 服务返回了无效的流式数据') }
+    if (event.type === 'error') throw new Error(event.message || 'AI 智能体执行失败')
+    if (event.type === 'token') answer += event.text
+    if (event.type === 'done') finished = true
+    onEvent?.(event)
+  }
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() ?? ''
+      for (const frame of frames) consumeFrame(frame)
+      if (done) break
+    }
+    if (buffer.trim()) consumeFrame(buffer)
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (!finished || !answer.trim()) throw new Error('AI 流式响应未正常完成，请重试')
+  return { answer }
 }

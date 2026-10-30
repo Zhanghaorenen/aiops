@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { errorMessage, sendChat, type ChatHistoryMessage, type ChatRequest, type ChatResponse } from '../api'
+import { errorMessage, sendChatStream, type ChatHistoryMessage, type ChatRequest, type ChatResponse, type ChatStreamEvent } from '../api'
 
 export const QUESTION_LIMIT = 4000
 export const HISTORY_LIMIT = 20
@@ -27,7 +27,7 @@ export function createChatRequest(question: string, messages: ChatHistoryMessage
 // Only completed turns enter history. Request identity isolates canceled or replaced sessions.
 export function useAiChat(
   access: () => { demo: boolean; token: string | null },
-  transport: (request: ChatRequest, signal?: AbortSignal) => Promise<ChatResponse> = sendChat,
+  transport: (request: ChatRequest, signal?: AbortSignal, onEvent?: (event: ChatStreamEvent) => void) => Promise<ChatResponse> = sendChatStream,
 ) {
   const input = ref('')
   const messages = ref<ChatHistoryMessage[]>([])
@@ -35,6 +35,8 @@ export function useAiChat(
   const error = ref('')
   const notice = ref('')
   const pendingQuestion = ref('')
+  const streamingAnswer = ref('')
+  const toolActivity = ref('')
   let active: AbortController | null = null
   let failedRequest: ChatRequest | null = null
   const canRetry = computed(() => !sending.value && !!failedRequest && input.value.trim() === failedRequest.question)
@@ -45,6 +47,8 @@ export function useAiChat(
     active = null
     sending.value = false
     request.abort()
+    streamingAnswer.value = ''
+    toolActivity.value = ''
     input.value = pendingQuestion.value
     notice.value = '已取消本次查询'
   }
@@ -56,6 +60,8 @@ export function useAiChat(
     error.value = ''
     notice.value = ''
     pendingQuestion.value = ''
+    streamingAnswer.value = ''
+    toolActivity.value = ''
     failedRequest = null
   }
 
@@ -76,9 +82,29 @@ export function useAiChat(
     notice.value = ''
     failedRequest = request
     pendingQuestion.value = request.question
+    streamingAnswer.value = ''
+    toolActivity.value = ''
     input.value = ''
     try {
-      const response = await transport(request, controller.signal)
+      const response = await transport(request, controller.signal, (event) => {
+        if (active !== controller || controller.signal.aborted) return
+        if (event.type === 'token') {
+          streamingAnswer.value += event.text
+          toolActivity.value = ''
+        } else if (event.type === 'tool_start') {
+          const labels: Record<string, string> = {
+            list_servers: '查询服务器列表', get_server_status: '查询服务器状态',
+            get_server_resource_usage: '查询主机指标', list_gpus: '查询 GPU 列表',
+            get_gpu_status: '查询 GPU 状态', get_gpu_overview: '汇总 GPU 指标',
+            get_gpu_processes: '查询 GPU 进程', get_gpu_history: '查询 GPU 历史',
+            analyze_gpu_health: '分析 GPU 健康度', compare_gpu_load: '比较 GPU 负载',
+            recommend_gpu_placement: '生成 GPU 调度建议',
+          }
+          toolActivity.value = `${labels[event.name] ?? '执行只读查询'}…`
+        } else if (event.type === 'tool_end') {
+          toolActivity.value = event.ok === false ? '查询未成功，正在整理结果…' : '数据已取得，正在分析…'
+        }
+      })
       if (active !== controller || controller.signal.aborted) return
       const current = access()
       if (current.demo || current.token !== identity.token) { reset(); return }
@@ -86,14 +112,18 @@ export function useAiChat(
       messages.value.push({ role: 'user', content: request.question }, { role: 'assistant', content: response.answer })
       pendingQuestion.value = ''
       failedRequest = null
+      streamingAnswer.value = ''
+      toolActivity.value = ''
     } catch (err) {
       if (active !== controller) return
       input.value = request.question
+      streamingAnswer.value = ''
+      toolActivity.value = ''
       if (!controller.signal.aborted) error.value = errorMessage(err)
     } finally {
       if (active === controller) { active = null; sending.value = false }
     }
   }
 
-  return { input, messages, sending, error, notice, pendingQuestion, canRetry, send, cancel, reset }
+  return { input, messages, sending, error, notice, pendingQuestion, streamingAnswer, toolActivity, canRetry, send, cancel, reset }
 }

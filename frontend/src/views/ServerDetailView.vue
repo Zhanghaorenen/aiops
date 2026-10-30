@@ -8,6 +8,7 @@ import { demoHistory } from '../demo'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatBytes, formatPercent, formatTime } from '../utils/format'
 import TrendChart from '../components/TrendChart.vue'
+import GpuMonitor from '../components/GpuMonitor.vue'
 
 const store = useWorkspaceStore()
 const route = useRoute()
@@ -83,6 +84,7 @@ function exportCsv() {
           <a-descriptions-item label="IP 地址">{{ server.ip || '—' }}</a-descriptions-item><a-descriptions-item label="最后心跳">{{ formatTime(server.lastSeenAt) }}</a-descriptions-item><a-descriptions-item label="最新采样">{{ formatTime(server.latestMetricAt) }}</a-descriptions-item>
         </a-descriptions>
       </a-tab-pane>
+      <a-tab-pane key="gpu" tab="GPU 监控"><GpuMonitor :server-id="server.id" /></a-tab-pane>
       <a-tab-pane key="samples" :tab="`采样记录 (${samples.length})`"><a-table row-key="id" size="small" :columns="columns" :data-source="records" :scroll="{ x: 600 }" :pagination="{ pageSize: 10 }"><template #bodyCell="{ column, record }">{{ column.key === 'collectedAt' ? formatTime(record.collectedAt) : formatPercent(record[column.key]) }}</template></a-table></a-tab-pane>
     </a-tabs>
   </template>
