@@ -31,6 +31,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     username.value = '演示访客'
   }
 
+  async function register(values: { username: string; password: string }) {
+    await api.post<void>('/api/auth/register', values)
+  }
   function logout() {
     localStorage.removeItem(TOKEN_KEY)
     token.value = null
@@ -52,5 +55,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function refresh() { revision.value++ }
 
   return { token, demo, username, servers, loading, error, updatedAt, autoRefresh, revision,
-    enrollment, authenticated, login, startDemo, logout, issueEnrollmentToken, refresh }
+    register, enrollment, authenticated, login, startDemo, logout, issueEnrollmentToken, refresh }
 })

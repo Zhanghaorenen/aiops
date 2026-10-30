@@ -21,6 +21,16 @@ $env:AIOPS_ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $initialPass
 
 ## 当前状态与命令
 
+单独启动开发后端时，在项目根目录执行：
+
+```powershell
+mvn spring-boot:run "-Dspring-boot.run.profiles=dev"
+```
+
+`application-dev.properties` 导入本机 `data/local-run/dev-secrets.properties`。该文件被 Git 忽略，保存开发数据库密码、初始化管理员密码和随机生成的 JWT 密钥；部署到新机器时需配置这些值，或设置 `AIOPS_DB_PASSWORD`、`AIOPS_JWT_SECRET` 等环境变量。JWT 密钥必须是标准 Base64，解码后至少 32 字节，不能直接填写带连字符的普通文本。已有管理员密码不会因初始化配置而重置。
+
+如果没有本机配置文件，可以按 README 的 PowerShell 示例设置环境变量后再运行上述命令。使用单独的后端启动命令时，不会自动启动 Vue 或 FastAPI。
+
 当前 `pom.xml` 使用 Spring Boot 4.1.1、Java 17、WebMVC、MyBatis-Plus 3.5.18、Spring Security、Flyway、MySQL Connector；测试使用 H2 并运行与生产相同的 Flyway V1–V4。执行 `.\mvnw.cmd test`。
 
 Flyway V1-V4 初始化认证、节点、Agent 注册凭证、主机指标并兼容旧原型表；MyBatis-Plus 负责映射及 SQL 执行，不自动建表或校验全部表结构。旧表数据不会自动转入新领域模型。管理员仅在同时配置 `AIOPS_ADMIN_USERNAME` 与 12 至 72 字符的 `AIOPS_ADMIN_PASSWORD` 时创建。注册令牌由已登录用户签发，有效期 30 分钟且只能使用一次；Agent 密钥和注册令牌只以 SHA-256 摘要存库。Agent 客户端位于 `agent/`，Vue 3 控制台位于 `frontend/`，页面与组件说明见 `frontend/README.md`。

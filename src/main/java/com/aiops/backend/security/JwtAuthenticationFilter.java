@@ -7,6 +7,7 @@ import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+
 import com.aiops.backend.repository.UserRepository;
 
 import io.jsonwebtoken.Claims;
@@ -25,7 +26,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.users = users;
     }
 
-    @Override
+    @Override //override注解用于标识一个方法是重写父类的方法，编译器会检查方法签名是否正确。
+    //protected 是访问修饰符，表示该方法可以被同一个包中的类以及子类访问。
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         if ("/api/agent/enroll".equals(request.getRequestURI())

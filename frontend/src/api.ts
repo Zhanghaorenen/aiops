@@ -11,14 +11,19 @@ export const aiApi = axios.create({
 })
 
 function attachAuthentication(client: AxiosInstance) {
+  const isPublicAuth = (url?: string) => url === '/api/auth/login' || url === '/api/auth/register'
   client.interceptors.request.use((config) => {
+    if (isPublicAuth(config.url)) {
+      config.headers.delete('Authorization')
+      return config
+    }
     const token = localStorage.getItem('aiops.accessToken')
     if (token) config.headers.Authorization = `Bearer ${token}`
     return config
   })
 
   client.interceptors.response.use((response) => response, (error) => {
-    if (error.response?.status === 401 && error.config?.url !== '/api/auth/login') {
+    if (error.response?.status === 401 && !isPublicAuth(error.config?.url)) {
       localStorage.removeItem('aiops.accessToken')
       window.dispatchEvent(new Event('aiops:unauthorized'))
     }
@@ -122,6 +127,9 @@ export function errorMessage(error: unknown): string {
         if (problems.length) return problems.join('；')
       }
       if (typeof message === 'string' && message.trim()) return message
+    }
+    if (error.response.status === 401 && error.config?.url === '/api/auth/register') {
+      return '注册请求未获授权，请确认后端已更新并重启'
     }
     const statusMessages: Record<number, string> = {
       401: '登录已失效，请重新登录', 403: '没有权限执行此查询', 422: '请求内容不符合要求，请检查问题和历史消息',

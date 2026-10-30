@@ -25,7 +25,9 @@ function signOut() {
 }
 function onUnauthorized() {
   if (!store.token) return
-  signOut()
+  store.logout()
+  if (route.meta.public) return
+  void router.replace('/login')
   message.warning('登录已失效，请重新登录')
 }
 onMounted(() => window.addEventListener('aiops:unauthorized', onUnauthorized))

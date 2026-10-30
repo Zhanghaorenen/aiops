@@ -11,7 +11,7 @@ export const router = createRouter({
   routes: [
     { path: '/', redirect: '/overview' },
     { path: '/login', component: LoginView, meta: { title: '登录', public: true } },
-    { path: '/signup', component: () => import('../views/Register.vue'), meta: { title: '注册新账户', public: true } },
+    { path: '/register', component: () => import('../views/Register.vue'), meta: { title: '注册新账户', public: true } },
     { path: '/overview', component: () => import('../views/OverviewView.vue'), meta: { title: '运行总览', section: 'overview', description: '基础设施状态与资源使用情况' } },
     { path: '/servers', component: () => import('../views/ServersView.vue'), meta: { title: '服务器资源', section: 'servers', description: '主机资产、运行状态与历史指标' } },
     { path: '/servers/:id(\\d+)', component: () => import('../views/ServerDetailView.vue'), meta: { title: '服务器详情', section: 'servers', description: '主机资产、运行状态与历史指标' } },

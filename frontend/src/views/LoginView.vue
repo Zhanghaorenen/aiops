@@ -36,6 +36,7 @@ function enterDemo() { store.startDemo(); void router.replace('/overview') }
       <div class="login-divider"><span>或</span></div>
       <a-button block size="large" @click="enterDemo"><template #icon><ExperimentOutlined /></template>进入演示环境</a-button>
       <p class="login-note">演示环境使用示例数据，无需连接数据库</p>
+      <div class="register-user"><span>新用户？</span><RouterLink to="/register">注册账号</RouterLink></div>
     </section>
     <span class="login-footer">AIOps Agent Platform · Infrastructure Operations</span>
   </main>

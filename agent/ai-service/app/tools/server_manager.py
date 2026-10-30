@@ -9,10 +9,10 @@ class ServerManager:
 
     async def list_servers(self) -> list[dict]:
         return await self.client.get_server_list()
-
+    ##获取服务器快照
     async def get_server_snapshot(self, server_id: int) -> dict:
         return await self.client.get_server(server_id)
-
+    ##获取服务器资源使用情况
     async def get_resource_usage(self, server_id: int) -> dict:
         sample = await self.client.get_server_latest_metrics(server_id)
         return {
@@ -23,7 +23,7 @@ class ServerManager:
             "memory": {"total_bytes": sample.get("memoryTotalBytes"), "used_bytes": sample.get("memoryUsedBytes"), "percent": sample.get("memoryPercent")},
             "disk": {"total_bytes": sample.get("diskTotalBytes"), "used_bytes": sample.get("diskUsedBytes"), "percent": sample.get("diskPercent")},
         }
-
+    ###获取服务器CPU状态
     async def get_cpu_status(self, server_id: int) -> dict:
         return (await self.get_resource_usage(server_id))["cpu"]
 
@@ -42,8 +42,4 @@ class ServerManager:
     async def get_cluster_overview(self) -> dict:
         return await self.client.get_cluster_overview()
 
-    async def get_gpu_process(self, server_id: int, gpu_id: int):
-        return await self.client.get_gpu_process(server_id, gpu_id)
-
-    async def get_gpu_history(self, server_id: int, gpu_id: int, start_time: str, end_time: str):
-        raise NotImplementedError("GPU 历史尚无平台查询 API，阶段 B 完成前不可用")
+    

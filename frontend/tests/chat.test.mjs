@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { AxiosError } from 'axios'
-import { createSSRApp, h } from 'vue'
+import { createSSRApp, effectScope, h, shallowRef } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { createPinia, setActivePinia } from 'pinia'
 import { createServer as createHttpServer } from 'node:http'
@@ -195,13 +195,18 @@ test('AI uses its own baseURL, sends JWT and AbortSignal, and shares unauthorize
   assert.equal(storage.has('aiops.accessToken'), false)
   assert.equal(unauthorized, 1)
   storage.set('aiops.accessToken', testToken)
-  api.defaults.adapter = async config => { throw responseError(401, { message: 'wrong password' }, config) }
+  api.defaults.adapter = async config => {
+    assert.equal(config.headers.Authorization, undefined)
+    throw responseError(401, { message: 'wrong password' }, config)
+  }
   await assert.rejects(api.post('/api/auth/login', {}))
   assert.equal(storage.get('aiops.accessToken'), testToken)
   assert.equal(unauthorized, 1)
-  await assert.rejects(api.post('/api/auth/register', {}))
-  assert.equal(storage.has('aiops.accessToken'), false)
-  assert.equal(unauthorized, 2)
+  api.defaults.adapter = async config => { throw responseError(401, {}, config) }
+  await assert.rejects(api.post('/api/auth/register', {}), error =>
+    apiModule.errorMessage(error) === '注册请求未获授权，请确认后端已更新并重启')
+  assert.equal(storage.get('aiops.accessToken'), testToken)
+  assert.equal(unauthorized, 1)
   events.removeEventListener('aiops:unauthorized', listener)
   storage.clear()
 })
@@ -245,46 +250,143 @@ test('AI view renders model HTML as escaped text, never active elements', async 
   assert.equal(prevented, false)
 })
 
-test('registration draft blocks anonymous/demo submissions and keeps authenticated payload separate', async () => {
+test('anonymous registration handles empty 201, prevents double submission and returns to login without a token', async () => {
   const Register = (await vite.ssrLoadModule('/src/views/Register.vue')).default
   const pinia = createPinia()
   setActivePinia(pinia)
   const store = storeModule.useWorkspaceStore()
   store.token = null
-  let state, calls = 0
-  apiModule.api.defaults.adapter = async config => {
+  store.demo = true
+  storage.clear()
+  let state, calls = 0, requestConfig, destination
+  const pending = defer()
+  apiModule.api.defaults.adapter = config => {
     calls++
+    requestConfig = config
     assert.equal(config.url, '/api/auth/register')
-    assert.equal(config.headers.Authorization, `Bearer ${testToken}`)
+    assert.equal(config.headers.Authorization, undefined)
     assert.deepEqual(JSON.parse(config.data), { username: 'testuser', password: 'mock-password-only' })
-    return { status: 201, data: null, config, headers: {}, statusText: 'Created' }
+    return pending.promise
   }
   const app = createSSRApp({ ...Register, setup(props, context) { state = Register.setup(props, context); return state } }).use(pinia)
-  app.provide(routerKey, { replace: async () => undefined })
+  app.provide(routerKey, { replace: async path => { destination = path } })
   const container = { setup: (_, { slots }) => () => h('div', slots.default?.()) }
   for (const name of ['a-form', 'a-form-item', 'a-input', 'a-input-password', 'a-button', 'RouterLink']) app.component(name, container)
   app.component('a-modal', { render: () => null })
   app.component('a-alert', { setup: (_, { attrs }) => () => h('div', String(attrs.message)) })
   const html = await renderToString(app)
-  assert.ok(html.includes('公开注册暂未开放'))
+  assert.ok(html.includes('演示环境不支持注册'))
   await state.register()
   assert.equal(calls, 0)
-  store.token = testToken
-  store.demo = true
-  await state.register()
-  assert.equal(calls, 0)
+  state.leaveRegistration()
+  assert.equal(store.demo, false)
+  assert.equal(store.authenticated, false)
   state.form.password = 'mock-password-only'
   await assert.rejects(state.validateConfirmation(null, 'different'), /不一致/)
   await state.validateConfirmation(null, state.form.password)
   store.demo = false
+  // A stale token from an earlier session must not be sent with public registration.
   storage.set('aiops.accessToken', testToken)
   state.form.username = 'testuser'
   state.form.reinput_password = state.form.password
+  const registration = state.register()
+  assert.equal(state.busy.value, true)
   await state.register()
+  await new Promise(resolve => setImmediate(resolve))
   assert.equal(calls, 1)
+  pending.resolve({ status: 201, data: null, config: requestConfig, headers: {}, statusText: 'Created' })
+  await registration
+  assert.equal(state.busy.value, false)
   assert.equal(state.dialogVisible.value, true)
   assert.equal(state.form.password, '')
+  assert.equal(store.token, null)
+  assert.equal(store.username, '')
+  assert.equal(storage.get('aiops.accessToken'), testToken)
+  await state.finishRegistration()
+  assert.equal(destination, '/login')
+  assert.equal(storage.has('aiops.accessToken'), false)
+  assert.equal(store.authenticated, false)
   storage.clear()
+})
+
+test('registration uses the real Ant Design validator for character, UTF-8 and confirmation boundaries', async () => {
+  const { Form } = await import('ant-design-vue')
+  const Register = (await vite.ssrLoadModule('/src/views/Register.vue')).default
+  const pinia = createPinia()
+  let state, boundRules
+  const app = createSSRApp({ ...Register, setup(props, context) { state = Register.setup(props, context); return state } }).use(pinia)
+  app.provide(routerKey, { replace: async () => undefined })
+  const container = { setup: (_, { slots }) => () => h('div', slots.default?.()) }
+  app.component('a-form', { setup: (_, { attrs, slots }) => { boundRules = attrs.rules; return () => h('div', slots.default?.()) } })
+  for (const name of ['a-form-item', 'a-input', 'a-input-password', 'a-button', 'RouterLink']) app.component(name, container)
+  app.component('a-modal', { render: () => null })
+  app.component('a-alert', { render: () => null })
+  await renderToString(app)
+  assert.equal(boundRules, state.formRules)
+  const scope = effectScope()
+  const validation = scope.run(() => Form.useForm(state.form, shallowRef(boundRules)))
+  const cases = [
+    ['empty username', { username: '' }, 'username'],
+    ['short username', { username: 'ab' }, 'username'],
+    ['long username', { username: 'a'.repeat(16) }, 'username'],
+    ['spaces in username', { username: 'test user' }, 'username'],
+    ['empty password', { password: '' }, 'password'],
+    ['seven characters', { password: 'a'.repeat(7) }, 'password'],
+    ['eleven characters', { password: 'a'.repeat(11) }, 'password'],
+    ['twelve characters', { password: 'a'.repeat(12) }, null],
+    ['seventy-two ASCII characters', { password: 'a'.repeat(72) }, null],
+    ['seventy-three ASCII characters', { password: 'a'.repeat(73) }, 'password'],
+    ['twenty-four Chinese characters', { password: '密'.repeat(24) }, null],
+    ['twenty-five Chinese characters', { password: '密'.repeat(25) }, 'password'],
+    ['six emoji are six characters', { password: '😀'.repeat(6) }, 'password'],
+    ['twelve emoji', { password: '😀'.repeat(12) }, null],
+    ['nineteen emoji exceed byte limit', { password: '😀'.repeat(19) }, 'password'],
+    ['confirmation mismatch', { reinput_password: 'another-password' }, 'reinput_password'],
+  ]
+  try {
+    for (const [label, overrides, invalidField] of cases) {
+      const password = overrides.password ?? 'valid-password-2026'
+      Object.assign(state.form, { username: 'audituser', password, reinput_password: password }, overrides)
+      if (invalidField) {
+        await assert.rejects(validation.validate(), error =>
+          error.errorFields.some(field => field.name === invalidField || field.name?.[0] === invalidField), label)
+      } else {
+        await assert.doesNotReject(validation.validate(), label)
+      }
+    }
+  } finally { scope.stop() }
+})
+
+test('failed registration keeps useful error and input, restores submit, and can be retried', async () => {
+  const Register = (await vite.ssrLoadModule('/src/views/Register.vue')).default
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  storeModule.useWorkspaceStore().logout()
+  let state, calls = 0
+  const app = createSSRApp({ ...Register, setup(props, context) { state = Register.setup(props, context); return state } }).use(pinia)
+  app.provide(routerKey, { replace: async () => undefined })
+  const container = { setup: (_, { slots }) => () => h('div', slots.default?.()) }
+  for (const name of ['a-form', 'a-form-item', 'a-input', 'a-input-password', 'a-button', 'RouterLink']) app.component(name, container)
+  app.component('a-modal', { render: () => null })
+  app.component('a-alert', { render: () => null })
+  await renderToString(app)
+  Object.assign(state.form, { username: 'retryuser', password: 'valid-password-2026', reinput_password: 'valid-password-2026' })
+  apiModule.api.defaults.adapter = async config => {
+    calls++
+    if (calls === 1) throw responseError(400, { message: '用户名已存在' }, config)
+    return { status: 201, data: '', config, headers: {}, statusText: 'Created' }
+  }
+  await state.register()
+  assert.equal(state.registrationError.value, '用户名已存在')
+  assert.equal(state.form.password, 'valid-password-2026')
+  assert.equal(state.busy.value, false)
+  assert.equal(state.dialogVisible.value, false)
+  state.form.username = 'retryuser2'
+  await state.register()
+  assert.equal(calls, 2)
+  assert.equal(state.registrationError.value, '')
+  assert.equal(state.dialogVisible.value, true)
+  assert.equal(state.busy.value, false)
 })
 
 test('Vite sends chat and AI health to FastAPI while business API stays on Java', async () => {

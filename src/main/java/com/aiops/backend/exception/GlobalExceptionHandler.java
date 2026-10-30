@@ -32,7 +32,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidRequest(MethodArgumentNotValidException exception) {
-        return buildResponse(HttpStatus.BAD_REQUEST, "请求参数无效");
+        String message = exception.getBindingResult().getFieldErrors().stream()
+                .map(error -> error.getDefaultMessage())
+                .filter(value -> value != null && !value.isBlank())
+                .distinct().collect(java.util.stream.Collectors.joining("；"));
+        return buildResponse(HttpStatus.BAD_REQUEST, message.isBlank() ? "请求参数无效" : message);
     }
 
     private ResponseEntity<Map<String, Object>> buildResponse(HttpStatus status, String message) {

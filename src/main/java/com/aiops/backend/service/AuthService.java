@@ -1,12 +1,14 @@
 package com.aiops.backend.service;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.dao.DuplicateKeyException;
 
 import com.aiops.backend.entity.LoginLogEntity;
 import com.aiops.backend.entity.UserEntity;
@@ -60,17 +62,29 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         users.save(user);
     }
-    @Transactional
+    @Transactional  //transactional 注解用于声明事务，确保在方法执行过程中，如果发生异常，事务会回滚，保证数据的一致性。
     public void register(String username, String password) {
+        if (username == null || !username.matches("[a-zA-Z0-9]{3,15}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "用户名须为 3 至 15 位字母或数字");
+        }
         if (users.findByUsername(username).isPresent()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "用户名已存在");
         }
-        if (password == null || password.length() < 12 || password.length() > 72) {
+        if (password == null || password.codePointCount(0, password.length()) < 12
+                || password.codePointCount(0, password.length()) > 72) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "密码长度须为 12 至 72 个字符");
         }
+        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "密码 UTF-8 长度不能超过 72 字节");
+        }
         UserEntity user = new UserEntity(username, passwordEncoder.encode(password));
-        users.save(user);
+        try {
+            users.save(user);
+        } catch (DuplicateKeyException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "用户名已存在");
+        }
     }
+
     public record LoginResult(String accessToken, Instant expiresAt) {}
     public record UserProfile(Long id, String username, String status) {}
 }
