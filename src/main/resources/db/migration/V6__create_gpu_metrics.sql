@@ -1,0 +1,60 @@
+CREATE TABLE metric_gpu_snapshot (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    node_id BIGINT NOT NULL,
+    agent_id BIGINT NOT NULL,
+    collection_status VARCHAR(20) NOT NULL,
+    error_message VARCHAR(1024),
+    collected_at DATETIME(6) NOT NULL,
+    received_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_gpu_snapshot_node FOREIGN KEY (node_id) REFERENCES ops_node (id),
+    CONSTRAINT fk_gpu_snapshot_agent FOREIGN KEY (agent_id) REFERENCES ops_agent (id),
+    INDEX idx_gpu_snapshot_node_time (node_id, collected_at, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE metric_gpu_sample (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    snapshot_id BIGINT NOT NULL,
+    node_id BIGINT NOT NULL,
+    agent_id BIGINT NOT NULL,
+    gpu_index INT NOT NULL,
+    gpu_uuid VARCHAR(160),
+    gpu_name VARCHAR(255),
+    memory_total_bytes BIGINT,
+    memory_used_bytes BIGINT,
+    memory_free_bytes BIGINT,
+    utilization_percent DECIMAL(5,2),
+    memory_utilization_percent DECIMAL(5,2),
+    temperature_c DECIMAL(7,2),
+    power_usage_w DECIMAL(10,3),
+    fan_speed_percent DECIMAL(5,2),
+    clock_speed_mhz DECIMAL(10,2),
+    collected_at DATETIME(6) NOT NULL,
+    received_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_gpu_sample_snapshot FOREIGN KEY (snapshot_id) REFERENCES metric_gpu_snapshot (id),
+    CONSTRAINT fk_gpu_sample_node FOREIGN KEY (node_id) REFERENCES ops_node (id),
+    CONSTRAINT fk_gpu_sample_agent FOREIGN KEY (agent_id) REFERENCES ops_agent (id),
+    CONSTRAINT uk_gpu_sample_snapshot_index UNIQUE (snapshot_id, gpu_index),
+    INDEX idx_gpu_sample_node_gpu_time (node_id, gpu_index, collected_at, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE metric_gpu_process_sample (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    snapshot_id BIGINT NOT NULL,
+    node_id BIGINT NOT NULL,
+    gpu_index INT NOT NULL,
+    gpu_uuid VARCHAR(160),
+    pid BIGINT NOT NULL,
+    process_name VARCHAR(255),
+    username VARCHAR(160),
+    gpu_memory_usage_bytes BIGINT,
+    task_type VARCHAR(80),
+    collected_at DATETIME(6) NOT NULL,
+    received_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_gpu_process_snapshot FOREIGN KEY (snapshot_id) REFERENCES metric_gpu_snapshot (id),
+    CONSTRAINT fk_gpu_process_node FOREIGN KEY (node_id) REFERENCES ops_node (id),
+    INDEX idx_gpu_process_snapshot_index (snapshot_id, gpu_index, id),
+    INDEX idx_gpu_process_node_time (node_id, collected_at, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

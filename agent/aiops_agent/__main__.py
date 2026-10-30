@@ -145,6 +145,35 @@ class Agent:
 
         self.last_snapshot = snapshot
 
+        gpus = []
+        for gpu in snapshot["gpus"]:
+            gpu_index = gpu.get("index")
+            gpus.append({
+                "gpuIndex": gpu_index,
+                "gpuUuid": gpu.get("uuid"),
+                "gpuName": gpu.get("name"),
+                "memoryTotalBytes": gpu.get("memory_total_bytes"),
+                "memoryUsedBytes": gpu.get("memory_used_bytes"),
+                "memoryFreeBytes": gpu.get("memory_free_bytes"),
+                "utilizationPercent": gpu.get("utilization_percent"),
+                "memoryUtilizationPercent": gpu.get("memory_utilization_percent"),
+                "temperatureC": gpu.get("temperature_c"),
+                "powerUsageW": gpu.get("power_w"),
+                "processes": [
+                    {
+                        "pid": process.get("pid"),
+                        "processName": process.get("name"),
+                        "username": process.get("username"),
+                        "gpuMemoryUsageBytes": process.get("gpu_memory_bytes"),
+                        "taskType": process.get("task_type"),
+                        "gpuIndex": gpu_index,
+                    }
+                    for process in gpu.get("processes", [])
+                ],
+            })
+
+        gpu_errors = [error for error in snapshot["errors"] if error.startswith("gpu:")]
+
         return {
             "cpuPercent": system["cpu"]["percent"],
             "memoryTotalBytes": system["memory"]["total"],
@@ -152,6 +181,9 @@ class Agent:
             "diskTotalBytes": system["disk"]["total"],
             "diskUsedBytes": system["disk"]["used"],
             "collectedAt": snapshot["collected_at"],
+            "gpuStatus": snapshot["gpu_status"],
+            "gpuError": "; ".join(gpu_errors)[:1024] or None,
+            "gpus": gpus,
         }
 
     def run(self) -> None:

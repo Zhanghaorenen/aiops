@@ -19,6 +19,7 @@ class GPUInfo:
 
     def __init__(self):
         self.process_collector = ProcessCollector()
+        self.collection_status = "UNKNOWN"
 
     @staticmethod
     def _text(value):
@@ -100,6 +101,7 @@ class GPUInfo:
         """获取所有 GPU 信息，返回可 JSON 序列化的列表。"""
 
         if pynvml is None:
+            self.collection_status = "UNAVAILABLE"
             logger.warning(
                 "GPU 采集不可用：请安装 nvidia-ml-py"
             )
@@ -110,6 +112,7 @@ class GPUInfo:
             pynvml.nvmlInit()
 
         except pynvml.NVMLError as exc:
+            self.collection_status = "UNAVAILABLE"
             logger.warning(
                 "GPU 采集不可用（驱动/NVML）：%s", exc
             )
@@ -122,8 +125,14 @@ class GPUInfo:
                 count = pynvml.nvmlDeviceGetCount()
 
             except pynvml.NVMLError as exc:
+                self.collection_status = "FAILED"
                 logger.warning("无法获取 GPU 数量：%s", exc)
                 return []
+
+            if count == 0:
+                self.collection_status = "NO_GPU"
+            else:
+                self.collection_status = "AVAILABLE"
 
             for index in range(count):
 
@@ -230,6 +239,7 @@ class GPUInfo:
                 # 追加到列表，不覆盖之前的 GPU
                 gpus.append(gpu_info)
 
+            self.collection_status = "AVAILABLE" if gpus else "FAILED"
             return gpus
 
         finally:

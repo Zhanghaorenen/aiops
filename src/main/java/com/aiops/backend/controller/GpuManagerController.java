@@ -15,13 +15,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.aiops.backend.repository.NodeRepository;
 import com.aiops.backend.service.GpuManagerService;
-
 /**
  * 指定服务器的只读 GPU API。沿用全局 USER/JWT 授权，不在中心服务器采集 NVML 数据。
  *
- * 现有工程尚无 GPU 上报/持久化/查询服务。查询契约暂放在本文件内，以遵守仅修改
- * Controller 的约束；实际查询服务需实现 GpuQueryService 并注册为 Spring Bean。
- * 未接入服务时返回 501，不把缺少数据来源伪装成空列表或零利用率。
+ * 查询数据来自被管 Agent 的 GPU 上报及数据库快照；控制器本身不访问中心服务器的 NVML。
  */
 @RestController
 @RequestMapping("/api/servers/{serverId}/gpus")
@@ -30,10 +27,11 @@ public class GpuManagerController {
 
     private final NodeRepository nodes;
     private final ObjectProvider<GpuManagerService> queries;
-
+    private final GpuManagerService queryService;
     public GpuManagerController(NodeRepository nodes, ObjectProvider<GpuManagerService> queries) {
         this.nodes = nodes;
         this.queries = queries;
+        this.queryService = queries.getIfAvailable();
     }
 
     @GetMapping
@@ -88,11 +86,8 @@ public class GpuManagerController {
         ensureServer(serverId);
         int boundedLimit = Math.min(Math.max(limit, 1), MAX_HISTORY_LIMIT);
         GpuManagerService service = queryService();
-        if (!(service instanceof GpuQueryService historyService)) {
-            throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "GPU 查询服务尚未接入历史查询能力");
-        }
         List<Map<String, Object>> history = requireData(
-                historyService.getGpuHistory(serverId, gpuId, from, to, boundedLimit), "GPU 历史查询暂不可用");
+                service.getGpuHistory(serverId, gpuId, from, to, boundedLimit), "GPU 历史查询暂不可用");
         if (history.size() > boundedLimit || history.stream().anyMatch(row -> row == null)) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "GPU 历史查询返回的数据不符合约定");
         }
@@ -128,28 +123,4 @@ public class GpuManagerController {
         return data;
     }
 
-    /**
-     * 供后续真实 GPU 查询服务实现的接入契约，不是数据存储或模拟服务。
-     * 所有查询必须按 serverId 隔离，gpuId 为服务器内从零开始的 GPU 索引。
-     */
-    public interface GpuQueryService extends GpuManagerService {
-        /**
-         * 返回 serverId、collectedAt、receivedAt 和等长数组 gpuUuids、gpuNames、
-         * gpuMemoryTotal/Used/Free、utilization、memoryUtilization，及可选温度等数组。
-         * 已确认无 GPU 时 gpuUuids 为空；未采集/失败应抛出明确异常。
-         */
-        Map<String, Object> getServerGpus(Long serverId);
-
-        /** 单卡采样包含 serverId、gpuIndex、gpuUuid、collectedAt 及真实指标；不存在时返回 null。 */
-        Map<String, Object> getGpuLatest(Long serverId, Integer gpuId);
-
-        /** 整机汇总包含 serverId、gpuCount、采样时间及真实汇总指标。 */
-        Map<String, Object> getServerGpuOverview(Long serverId);
-
-        /** 进程包含 gpuIndex、pid、processName、username、gpuMemoryUsage、taskType。 */
-        List<Map<String, Object>> getGpuProcesses(Long serverId);
-
-        /** 按 collectedAt 升序，包含 serverId/gpuIndex/collectedAt，闭区间查询且数量不超过 limit。 */
-        List<Map<String, Object>> getGpuHistory(Long serverId, Integer gpuId, Instant from, Instant to, int limit);
-    }
 }

@@ -21,13 +21,16 @@ class HostSnapshot:
 
         try:
             gpus = self.gpu_collector.get_gpu_info()
+            gpu_status = self.gpu_collector.collection_status
         except Exception as exc:
             gpus = []
+            gpu_status = "FAILED"
             errors.append(f"gpu: {exc}")
 
         return {
             "collected_at": datetime.now(timezone.utc).isoformat(),
             "system": system,
             "gpus": gpus,
+            "gpu_status": gpu_status,
             "errors": errors,
         }

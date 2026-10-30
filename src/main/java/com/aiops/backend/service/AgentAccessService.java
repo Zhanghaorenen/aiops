@@ -6,6 +6,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -14,17 +16,25 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.server.ResponseStatusException;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 
 import com.aiops.backend.entity.AgentEnrollTokenEntity;
 import com.aiops.backend.entity.HostMetricSampleEntity;
+import com.aiops.backend.entity.GpuProcessSampleEntity;
+import com.aiops.backend.entity.GpuSampleEntity;
+import com.aiops.backend.entity.GpuSnapshotEntity;
 import com.aiops.backend.entity.NodeEntity;
 import com.aiops.backend.entity.OpsAgentEntity;
 import com.aiops.backend.repository.AgentEnrollTokenRepository;
 import com.aiops.backend.repository.HostMetricSampleRepository;
+import com.aiops.backend.repository.GpuProcessSampleRepository;
+import com.aiops.backend.repository.GpuSampleRepository;
+import com.aiops.backend.repository.GpuSnapshotRepository;
 import com.aiops.backend.repository.NodeRepository;
 import com.aiops.backend.repository.OpsAgentRepository;
 
@@ -34,11 +44,16 @@ public class AgentAccessService {
     private final OpsAgentRepository agents;
     private final NodeRepository nodes;
     private final HostMetricSampleRepository metrics;
+    private final GpuSnapshotRepository gpuSnapshots;
+    private final GpuSampleRepository gpuSamples;
+    private final GpuProcessSampleRepository gpuProcesses;
     private final SecureRandom random = new SecureRandom();
 
     public AgentAccessService(AgentEnrollTokenRepository tokens, OpsAgentRepository agents,
-            NodeRepository nodes, HostMetricSampleRepository metrics) {
+            NodeRepository nodes, HostMetricSampleRepository metrics, GpuSnapshotRepository gpuSnapshots,
+            GpuSampleRepository gpuSamples, GpuProcessSampleRepository gpuProcesses) {
         this.tokens = tokens; this.agents = agents; this.nodes = nodes; this.metrics = metrics;
+        this.gpuSnapshots = gpuSnapshots; this.gpuSamples = gpuSamples; this.gpuProcesses = gpuProcesses;
     }
 
     @Transactional
@@ -102,11 +117,102 @@ public class AgentAccessService {
             node.markOnline(now);
             nodes.save(node);
         });
-        return metrics.save(new HostMetricSampleEntity(agent.getNodeId(), agentId,
+        HostMetricSampleEntity saved = metrics.save(new HostMetricSampleEntity(agent.getNodeId(), agentId,
                 request.cpuPercent(), request.memoryTotalBytes(), request.memoryUsedBytes(),
                 percent(request.memoryUsedBytes(), request.memoryTotalBytes()), request.diskTotalBytes(),
                 request.diskUsedBytes(), percent(request.diskUsedBytes(), request.diskTotalBytes()),
                 collectedAt, now));
+        recordGpuSnapshot(agent, request, collectedAt, now);
+        return saved;
+    }
+
+    private void recordGpuSnapshot(OpsAgentEntity agent, MetricRequest request, Instant collectedAt, Instant receivedAt) {
+        String status = request.gpuStatus() == null ? "UNREPORTED" : request.gpuStatus();
+        List<GpuSampleRequest> gpus = request.gpus() == null ? List.of() : request.gpus();
+        if (!List.of("AVAILABLE", "NO_GPU", "UNAVAILABLE", "FAILED", "UNKNOWN", "UNREPORTED").contains(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "gpuStatus 不受支持");
+        }
+        if (!gpus.isEmpty() && !"AVAILABLE".equals(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "存在 GPU 样本时 gpuStatus 必须为 AVAILABLE");
+        }
+        if ("AVAILABLE".equals(status) && gpus.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "AVAILABLE 状态必须包含 GPU 样本");
+        }
+
+        Set<Integer> indices = new HashSet<>();
+        Set<String> uuids = new HashSet<>();
+        for (GpuSampleRequest gpu : gpus) {
+            validateGpu(gpu, indices, uuids);
+        }
+
+        String error = request.gpuError();
+        if (error != null && error.length() > 1024) error = error.substring(0, 1024);
+        GpuSnapshotEntity snapshot = gpuSnapshots.save(new GpuSnapshotEntity(
+                agent.getNodeId(), agent.getId(), status, error, collectedAt, receivedAt));
+        for (GpuSampleRequest gpu : gpus) {
+            GpuSampleEntity sample = gpuSamples.save(new GpuSampleEntity(snapshot.getId(), agent.getNodeId(),
+                    agent.getId(), gpu.gpuIndex(), gpu.gpuUuid(), gpu.gpuName(), gpu.memoryTotalBytes(),
+                    gpu.memoryUsedBytes(), gpu.memoryFreeBytes(), gpu.utilizationPercent(),
+                    gpu.memoryUtilizationPercent(), gpu.temperatureC(), gpu.powerUsageW(),
+                    gpu.fanSpeedPercent(), gpu.clockSpeedMhz(), collectedAt, receivedAt));
+            if (gpu.processes() == null) continue;
+            for (GpuProcessRequest process : gpu.processes()) {
+                if (process.gpuIndex() != null && !gpu.gpuIndex().equals(process.gpuIndex())) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "GPU 进程 gpuIndex 与所属 GPU 不一致");
+                }
+                gpuProcesses.save(new GpuProcessSampleEntity(snapshot.getId(), agent.getNodeId(),
+                        gpu.gpuIndex(), gpu.gpuUuid(), process.pid(), process.processName(),
+                        process.username(), process.gpuMemoryUsageBytes(), process.taskType(),
+                        collectedAt, receivedAt));
+            }
+        }
+    }
+
+    private void validateGpu(GpuSampleRequest gpu, Set<Integer> indices, Set<String> uuids) {
+        if (gpu == null || gpu.gpuIndex() == null || gpu.gpuIndex() < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "GPU index 必须为非负整数");
+        }
+        if (!indices.add(gpu.gpuIndex())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "GPU index 不能重复");
+        }
+        if (gpu.gpuUuid() != null && !uuids.add(gpu.gpuUuid())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "GPU UUID 不能重复");
+        }
+        nonNegative(gpu.memoryTotalBytes(), "memoryTotalBytes");
+        nonNegative(gpu.memoryUsedBytes(), "memoryUsedBytes");
+        nonNegative(gpu.memoryFreeBytes(), "memoryFreeBytes");
+        if (gpu.memoryTotalBytes() != null && (gpu.memoryUsedBytes() != null
+                && gpu.memoryUsedBytes() > gpu.memoryTotalBytes()
+                || gpu.memoryFreeBytes() != null && gpu.memoryFreeBytes() > gpu.memoryTotalBytes())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "GPU 显存用量不能超过总显存");
+        }
+        percent(gpu.utilizationPercent(), "utilizationPercent");
+        percent(gpu.memoryUtilizationPercent(), "memoryUtilizationPercent");
+        percent(gpu.fanSpeedPercent(), "fanSpeedPercent");
+        nonNegative(gpu.temperatureC(), "temperatureC");
+        nonNegative(gpu.powerUsageW(), "powerUsageW");
+        nonNegative(gpu.clockSpeedMhz(), "clockSpeedMhz");
+        if (gpu.processes() != null) {
+            for (GpuProcessRequest process : gpu.processes()) {
+                if (process == null || process.pid() == null || process.pid() <= 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "GPU 进程 PID 必须为正整数");
+                }
+                nonNegative(process.gpuMemoryUsageBytes(), "gpuMemoryUsageBytes");
+            }
+        }
+    }
+
+    private void percent(java.math.BigDecimal value, String name) {
+        if (value != null && (value.signum() < 0 || value.compareTo(java.math.BigDecimal.valueOf(100)) > 0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, name + " 必须在 0 到 100 之间");
+        }
+    }
+
+    private void nonNegative(java.math.BigDecimal value, String name) {
+        if (value != null && value.signum() < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, name + " 不能为负数");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -193,5 +299,27 @@ public class AgentAccessService {
     public record MetricRequest(@NotNull @DecimalMin("0.0") @DecimalMax("100.0") Double cpuPercent,
             @NotNull @Positive Long memoryTotalBytes, @NotNull @DecimalMin("0") Long memoryUsedBytes,
             @NotNull @Positive Long diskTotalBytes, @NotNull @DecimalMin("0") Long diskUsedBytes,
-            Instant collectedAt) {}
+            Instant collectedAt, String gpuStatus, @Size(max = 32) List<@Valid GpuSampleRequest> gpus,
+            @Size(max = 1024) String gpuError) {
+        public MetricRequest(Double cpuPercent, Long memoryTotalBytes, Long memoryUsedBytes,
+                Long diskTotalBytes, Long diskUsedBytes, Instant collectedAt) {
+            this(cpuPercent, memoryTotalBytes, memoryUsedBytes, diskTotalBytes,
+                    diskUsedBytes, collectedAt, null, null, null);
+        }
+    }
+
+    public record GpuSampleRequest(@NotNull @Min(0) Integer gpuIndex, @NotBlank @Size(max = 160) String gpuUuid,
+            @Size(max = 255) String gpuName, @Positive Long memoryTotalBytes,
+            @DecimalMin("0") Long memoryUsedBytes, @DecimalMin("0") Long memoryFreeBytes,
+            @DecimalMin("0") @DecimalMax("100") java.math.BigDecimal utilizationPercent,
+            @DecimalMin("0") @DecimalMax("100") java.math.BigDecimal memoryUtilizationPercent,
+            @DecimalMin("0") java.math.BigDecimal temperatureC,
+            @DecimalMin("0") java.math.BigDecimal powerUsageW,
+            @DecimalMin("0") @DecimalMax("100") java.math.BigDecimal fanSpeedPercent,
+            @DecimalMin("0") java.math.BigDecimal clockSpeedMhz,
+            @Size(max = 256) List<@Valid GpuProcessRequest> processes) {}
+
+    public record GpuProcessRequest(@NotNull @Positive Long pid, @Size(max = 255) String processName,
+            @Size(max = 160) String username, @DecimalMin("0") Long gpuMemoryUsageBytes,
+            @Size(max = 80) String taskType, @Min(0) Integer gpuIndex) {}
 }
