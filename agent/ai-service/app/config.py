@@ -26,6 +26,14 @@ class Settings:
     llm_timeout: float = 30.0
     chat_timeout: float = 90.0
     max_rounds: int = 4
+    rag_service_key: str = field(default="", repr=False)
+    rag_storage_dir: str = "data/knowledge"
+    embedding_path: str = ""
+    embedding_version: str = ""
+    qdrant_url: str = "http://127.0.0.1:6333"
+    qdrant_key: str = field(default="", repr=False)
+    rag_chunk_size: int = 1000
+    rag_chunk_overlap: int = 150
 
     @classmethod
     def from_env(cls):
@@ -34,6 +42,14 @@ class Settings:
             backend_url=http_url(os.getenv("AIOPS_BACKEND_URL", "http://127.0.0.1:8080").strip(), "AIOPS_BACKEND_URL"),
             llm_base_url=http_url(llm_url, "AIOPS_LLM_BASE_URL") if llm_url else "",
             llm_model=os.getenv("AIOPS_LLM_MODEL", "").strip(),
+            rag_service_key=os.getenv("AIOPS_RAG_SERVICE_KEY", ""),
+            rag_storage_dir=os.getenv("AIOPS_RAG_STORAGE_DIR", "data/knowledge"),
+            embedding_path=os.getenv("AIOPS_EMBEDDING_PATH", ""),
+            embedding_version=os.getenv("AIOPS_EMBEDDING_VERSION", ""),
+            qdrant_url=http_url(os.getenv("AIOPS_QDRANT_URL", "http://127.0.0.1:6333"), "AIOPS_QDRANT_URL"),
+            qdrant_key=os.getenv("AIOPS_QDRANT_KEY", ""),
+            rag_chunk_size=int(os.getenv("AIOPS_RAG_CHUNK_SIZE", "1000")),
+            rag_chunk_overlap=int(os.getenv("AIOPS_RAG_CHUNK_OVERLAP", "150")),
             llm_api_key=os.getenv("AIOPS_LLM_API_KEY", "").strip(),
         )
 

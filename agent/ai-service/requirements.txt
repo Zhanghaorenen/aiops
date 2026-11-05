@@ -5,3 +5,9 @@ langgraph>=1.0,<2
 openai>=2,<3
 pydantic>=2.12,<3
 uvicorn>=0.35,<1
+
+# RAG parsing and offline local embeddings
+python-multipart>=0.0.20,<1
+pypdf>=6,<7
+python-docx>=1.2,<2
+sentence-transformers>=5,<6

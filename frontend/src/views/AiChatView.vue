@@ -47,7 +47,7 @@ function confirmReset() { reset(); confirmation.value = null }
       <div v-if="!messages.length && !pendingQuestion" class="chat-welcome"><RobotOutlined /><h2>有什么需要检查？</h2></div>
       <article v-for="(item, index) in messages" :key="index" class="chat-message" :class="item.role" :aria-label="item.role === 'user' ? '我的问题' : 'AI 回答'">
         <div class="chat-avatar"><UserOutlined v-if="item.role === 'user'" /><RobotOutlined v-else /></div>
-        <div class="chat-bubble">{{ item.content }}</div>
+        <div class="chat-bubble">{{ item.content }}<details v-if="item.sources?.length"><summary>检索来源（{{ item.sources.length }}）</summary><div v-for="source in item.sources" :key="source.chunk_id"><strong>{{source.document_title}}</strong> · 文档 {{source.document_id}} · {{source.page ? `第 ${source.page} 页` : '无页码'}} · {{source.section || '无章节'}}<p>{{source.content}}</p></div></details></div>
       </article>
       <article v-if="pendingQuestion" class="chat-message user" aria-label="本次问题"><div class="chat-avatar"><UserOutlined /></div><div class="chat-bubble">{{ pendingQuestion }}</div></article>
       <article v-if="sending" class="chat-message assistant" aria-label="AI 正在回复">

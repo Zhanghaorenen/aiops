@@ -211,6 +211,7 @@ export interface ChatResponse {
 export type ChatStreamEvent =
   | { type: 'token'; text: string }
   | { type: 'tool_start' | 'tool_end'; name: string; ok?: boolean }
+  | { type: 'sources'; results: RagSearchResult[] }
   | { type: 'done' }
   | { type: 'error'; status?: number; message: string }
 
@@ -308,3 +309,7 @@ export async function sendChatStream(
   if (!finished || !answer.trim()) throw new Error('AI 流式响应未正常完成，请重试')
   return { answer }
 }
+
+export interface KnowledgeBase {id:number;name:string;description:string|null;status:string}
+export interface KnowledgeDocument {id:number;kbId:number;originalFilename:string;mimeType:string;status:string;chunkCount:number|null;createdAt:string;errorCode:string|null}
+export interface RagSearchResult {chunk_id:string;document_id:number;knowledge_base_id:number;document_title:string;page:number|null;section:string|null;content:string;score:number}

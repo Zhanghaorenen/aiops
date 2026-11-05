@@ -151,5 +151,40 @@ class PlatformClient:
             self._gpu_identity(sample, server_id, gpu_id)
         return data
 
+    async def list_knowledge_bases(self):
+        return await self._get('/api/knowledge-bases', list)
+
+    async def get_knowledge_base(self, kb):
+        return await self._get(f'/api/knowledge-bases/{self._server_id(kb)}', dict)
+
+    async def list_knowledge_documents(self,kb):
+        return await self._get(f'/api/knowledge-bases/{self._server_id(kb)}/documents',list)
+
+    async def get_knowledge_document(self,kb,doc):
+        return await self._get(f'/api/knowledge-bases/{self._server_id(kb)}/documents/{self._server_id(doc)}',dict)
+
+    async def _knowledge_write(self,method,path,body=None,key=None):
+        response=await self.client.request(method,path,json=body,headers={'X-RAG-Service-Key':key} if key else {})
+        response.raise_for_status()
+        return response.json() if response.content else None
+
+    async def register_knowledge_document(self,kb,body,key):
+        return await self._knowledge_write('POST',f'/api/knowledge-bases/{kb}/documents',body,key)
+
+    async def set_knowledge_status(self,doc,body,key):
+        return await self._knowledge_write('PATCH',f'/api/internal/knowledge/documents/{doc}/index-status',body,key)
+
+    async def mark_knowledge_document_deleting(self,kb,doc):
+        return await self._knowledge_write('DELETE',f'/api/knowledge-bases/{kb}/documents/{doc}')
+
+    async def mark_knowledge_base_deleting(self,kb):
+        return await self._knowledge_write('DELETE',f'/api/knowledge-bases/{kb}')
+
+    async def purge_knowledge_document(self,doc,key):
+        return await self._knowledge_write('DELETE',f'/api/internal/knowledge/documents/{doc}',key=key)
+
+    async def purge_knowledge_base(self,kb,key):
+        return await self._knowledge_write('DELETE',f'/api/internal/knowledge/bases/{kb}',key=key)
+
     async def close(self):
         await self.client.aclose()

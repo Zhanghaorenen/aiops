@@ -15,9 +15,11 @@ def create_app(settings: Settings | None = None, platform_factory=PlatformClient
     application.state.llm_factory = llm_factory
     import os
     origin = os.getenv("AIOPS_WEB_ALLOWED_ORIGIN", "http://localhost:5173")
-    application.add_middleware(CORSMiddleware, allow_origins=[origin], allow_methods=["GET", "POST"],
+    application.add_middleware(CORSMiddleware, allow_origins=[origin], allow_methods=["GET", "POST", "DELETE"],
                                allow_headers=["Authorization", "Content-Type"])
     application.include_router(chat_router)
+    from .api.knowledge import router as knowledge_router
+    application.include_router(knowledge_router)
 
     @application.get("/api/ai/health")
     def health():

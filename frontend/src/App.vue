@@ -83,6 +83,7 @@ watch([() => store.authenticated, () => store.demo, () => store.token, () => sto
           <a-menu-item key="servers"><template #icon><DesktopOutlined /></template>服务器资源</a-menu-item>
           <a-menu-item key="access"><template #icon><ApiOutlined /></template>Agent 接入</a-menu-item>
           <a-menu-item key="settings"><template #icon><SettingOutlined /></template>账户设置</a-menu-item>
+          <a-menu-item key="knowledge"><template #icon><ExperimentOutlined /></template>运维知识库</a-menu-item>
           <a-menu-item key="ai"><template #icon><RobotOutlined /></template>AI 智能运维</a-menu-item>
         </a-menu>
         <div class="nav-footer"><span class="connection-dot" :class="{ bad: store.error }" />{{ store.demo ? '演示工作空间' : store.error ? '连接异常' : '本地工作空间' }}<small>Agent Platform / V0.1</small></div>

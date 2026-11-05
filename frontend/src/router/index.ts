@@ -16,6 +16,7 @@ export const router = createRouter({
     { path: '/servers', component: () => import('../views/ServersView.vue'), meta: { title: '服务器资源', section: 'servers', description: '主机资产、运行状态与历史指标' } },
     { path: '/servers/:id(\\d+)', component: () => import('../views/ServerDetailView.vue'), meta: { title: '服务器详情', section: 'servers', description: '主机资产、运行状态与历史指标' } },
     { path: '/ai', component: () => import('../views/AiChatView.vue'), meta: { title: 'AI 智能运维', section: 'ai', description: '服务器查询与只读运维诊断' } },
+    { path: '/knowledge', component: () => import('../views/KnowledgeView.vue'), meta: { title: '运维知识库', section: 'knowledge', description: '私人文档与知识检索' } },
     { path: '/access', component: () => import('../views/AccessView.vue'), meta: { title: 'Agent 接入', section: 'access', description: '注册节点并连接 Python Agent' } },
     { path: '/settings', component: () => import('../views/AccountView.vue'), meta: { title: '账户设置', section: 'settings', description: '管理当前账户与登录凭证' } },
     { path: '/:pathMatch(.*)*', component: () => import('../views/NotFoundView.vue'), meta: { title: '页面不存在', section: '' } },

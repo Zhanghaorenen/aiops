@@ -459,3 +459,17 @@ test('Vite sends chat and AI health to FastAPI while business API stays on Java'
     delete process.env.AIOPS_PROXY_TARGET
   }
 })
+
+
+test('RAG sources are deduplicated and kept with the answer, without being sent as history instructions', async () => {
+  const source = {chunk_id:'doc1-v1-00000',document_id:1,knowledge_base_id:1,document_title:'GPU.md',page:2,section:'显存',content:'CUDA OOM',score:0.8}
+  const session = chat.useAiChat(signedIn, async (request, signal, onEvent) => {
+    onEvent({type:'sources',results:[source]});onEvent({type:'sources',results:[source]})
+    return {answer:'检查 GPU 显存'}
+  })
+  session.input.value='CUDA OOM 怎么排查';await session.send()
+  assert.equal(session.messages.value[1].sources.length,1)
+  assert.equal(session.messages.value[1].sources[0].page,2)
+  const next=chat.createChatRequest('继续',session.messages.value)
+  assert.equal('sources' in next.history[1],false)
+})

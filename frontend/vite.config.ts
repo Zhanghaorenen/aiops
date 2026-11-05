@@ -9,6 +9,7 @@ export default defineConfig({
 
     proxy: {
       // AI 聊天请求转发给 FastAPI
+      '/api/rag': { target: process.env.AIOPS_AI_PROXY_TARGET || 'http://127.0.0.1:8000', changeOrigin: true },
       '/api/chat': {
         target: process.env.AIOPS_AI_PROXY_TARGET || 'http://127.0.0.1:8000',
         changeOrigin: true,

@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { errorMessage, sendChatStream, type ChatHistoryMessage, type ChatRequest, type ChatResponse, type ChatStreamEvent } from '../api'
+import { errorMessage, sendChatStream, type ChatHistoryMessage, type ChatRequest, type ChatResponse, type ChatStreamEvent, type RagSearchResult } from '../api'
 
 export const QUESTION_LIMIT = 4000
 export const HISTORY_LIMIT = 20
@@ -30,7 +30,7 @@ export function useAiChat(
   transport: (request: ChatRequest, signal?: AbortSignal, onEvent?: (event: ChatStreamEvent) => void) => Promise<ChatResponse> = sendChatStream,
 ) {
   const input = ref('')
-  const messages = ref<ChatHistoryMessage[]>([])
+  const messages = ref<(ChatHistoryMessage & { sources?: RagSearchResult[] })[]>([])
   const sending = ref(false)
   const error = ref('')
   const notice = ref('')
@@ -85,14 +85,17 @@ export function useAiChat(
     streamingAnswer.value = ''
     toolActivity.value = ''
     input.value = ''
+    const sources: RagSearchResult[] = []
     try {
       const response = await transport(request, controller.signal, (event) => {
         if (active !== controller || controller.signal.aborted) return
-        if (event.type === 'token') {
+        if (event.type === 'sources') {
+          for (const hit of event.results) if (!sources.some(s => s.chunk_id === hit.chunk_id)) sources.push(hit)
+        } else if (event.type === 'token') {
           streamingAnswer.value += event.text
           toolActivity.value = ''
         } else if (event.type === 'tool_start') {
-          const labels: Record<string, string> = {
+          const labels: Record<string, string> = { search_knowledge: '检索运维知识库',
             list_servers: '查询服务器列表', get_server_status: '查询服务器状态',
             get_server_resource_usage: '查询主机指标', list_gpus: '查询 GPU 列表',
             get_gpu_status: '查询 GPU 状态', get_gpu_overview: '汇总 GPU 指标',
@@ -109,7 +112,7 @@ export function useAiChat(
       const current = access()
       if (current.demo || current.token !== identity.token) { reset(); return }
       if (typeof response.answer !== 'string' || !response.answer.trim()) throw new Error('AI 服务返回了无效回答，请重试')
-      messages.value.push({ role: 'user', content: request.question }, { role: 'assistant', content: response.answer })
+      messages.value.push({ role: 'user', content: request.question }, { role: 'assistant', content: response.answer, sources })
       pendingQuestion.value = ''
       failedRequest = null
       streamingAnswer.value = ''
