@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from .rag.resources import RagResources
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.chat import router as chat_router
@@ -9,7 +11,16 @@ from .llm.client import LLMClient
 
 def create_app(settings: Settings | None = None, platform_factory=PlatformClient,
                llm_factory=LLMClient) -> FastAPI:
-    application = FastAPI(title="AIOps AI Service", version="0.1.0", description="Central read-only diagnostics")
+    manager = RagResources()
+    @asynccontextmanager
+    async def lifespan(app):
+        try:
+            yield
+        finally:
+            await manager.close()
+
+    application = FastAPI(lifespan=lifespan, title="AIOps AI Service", version="0.1.0", description="Central read-only diagnostics")
+    application.state.rag_resources = manager
     application.state.settings = settings
     application.state.platform_factory = platform_factory
     application.state.llm_factory = llm_factory

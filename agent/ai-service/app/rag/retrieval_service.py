@@ -15,8 +15,12 @@ class RetrievalService:
             from fastapi import HTTPException
             raise HTTPException(403,'无权检索指定知识库')
         if not requested: return {'results':[]}
-        vector=await asyncio.to_thread(self.embedding.embed_query,req.query)
-        hits=await self.store.search(vector,sorted(requested),min(50,req.top_k*5))
+        versions=[]
+        for kb_id in sorted(requested):
+            for doc in await self.platform.list_knowledge_documents(kb_id):
+                if doc['status']=='READY' and doc.get('embeddingVersion')==self.embedding.version:
+                    versions.append((kb_id,doc['id'],doc['indexVersion']))
+        hits=await self.store.search(req.query,sorted(requested),min(50,req.top_k*5),versions)
         results=[]
         for hit in hits:
             if hit['knowledge_base_id'] not in requested: continue

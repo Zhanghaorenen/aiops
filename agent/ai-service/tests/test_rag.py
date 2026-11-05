@@ -49,7 +49,7 @@ class ParserTests(unittest.TestCase):
 
 class RagTests(unittest.IsolatedAsyncioTestCase):
     def platform(self):
-        return SimpleNamespace(list_knowledge_bases=AsyncMock(return_value=[{'id':1,'status':'ACTIVE'}]),get_knowledge_base=AsyncMock(return_value={'id':1,'status':'ACTIVE'}),get_knowledge_document=AsyncMock(return_value={'id':2,'status':'READY','indexVersion':1,'embeddingVersion':'test-v1','originalFilename':'manual.md'}))
+        return SimpleNamespace(list_knowledge_bases=AsyncMock(return_value=[{'id':1,'status':'ACTIVE'}]),get_knowledge_base=AsyncMock(return_value={'id':1,'status':'ACTIVE'}),list_knowledge_documents=AsyncMock(return_value=[{'id':2,'status':'READY','indexVersion':1,'embeddingVersion':'test-v1'}]),get_knowledge_document=AsyncMock(return_value={'id':2,'status':'READY','indexVersion':1,'embeddingVersion':'test-v1','originalFilename':'manual.md'}))
     def hit(self):return {'chunk_id':'doc2-v1-00000','document_id':2,'knowledge_base_id':1,'index_version':1,'document_title':'manual.md','content':'CUDA OOM 检查显存','score':0.8}
     async def test_cross_user_search_never_calls_embedding_or_vectors(self):
         platform=self.platform();store=SimpleNamespace(search=AsyncMock());embedding=SimpleNamespace(embed_query=lambda q:self.fail('must not embed'))
@@ -87,11 +87,17 @@ class RagTests(unittest.IsolatedAsyncioTestCase):
             store.delete_document_chunks.side_effect=None;await service.delete_document(1,2)
             self.assertFalse(path.exists());platform.purge_knowledge_document.assert_awaited()
     async def test_qdrant_query_contains_mandatory_scope(self):
-        store=VectorStore('http://localhost:6333','','test-v1');store.ensure=AsyncMock();store.request=AsyncMock(return_value={'result':{'points':[]}})
-        await store.search([1,0],[1,4],5)
-        conditions=store.request.await_args.kwargs['json']['filter']['must']
-        self.assertIn({'key':'knowledge_base_id','match':{'any':[1,4]}},conditions)
-        self.assertIn({'key':'embedding_version','match':{'value':'test-v1'}},conditions)
+        from unittest.mock import Mock
+        store=VectorStore('http://localhost:6333','','test-v1')
+        vectorstore=SimpleNamespace(asimilarity_search_with_score=AsyncMock(return_value=[]))
+        store._store=Mock(return_value=vectorstore)
+        try:
+            await store.search('CUDA OOM',[1,4],5,[(1,2,2)])
+            conditions=vectorstore.asimilarity_search_with_score.await_args.kwargs['filter'].model_dump()
+            self.assertIn('metadata.knowledge_base_id',str(conditions))
+            self.assertIn('metadata.index_version',str(conditions))
+            self.assertIn("'value': 2",str(conditions))
+        finally:store.close()
     async def test_forbidden_upload_and_delete_do_not_touch_local_files(self):
         with tempfile.TemporaryDirectory() as temp:
             platform=self.platform()

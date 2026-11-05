@@ -37,8 +37,7 @@ class IngestionService:
             await self.platform.set_knowledge_status(doc['id'],{'status':'PROCESSING','embeddingVersion':self.embedding.version},self.settings.rag_service_key)
             docs=await asyncio.to_thread(parse_document,path,mime)
             chunks=split_documents(docs,self.settings.rag_chunk_size,self.settings.rag_chunk_overlap)
-            vectors=await asyncio.to_thread(self.embedding.embed_documents,[c.page_content for c in chunks])
-            await self.store.upsert_chunks(kb_id,doc['id'],doc['indexVersion'],chunks,vectors,filename)
+            await self.store.upsert_chunks(kb_id,doc['id'],doc['indexVersion'],chunks,filename)
             await self.platform.set_knowledge_status(doc['id'],{'status':'READY','chunkCount':len(chunks),'embeddingVersion':self.embedding.version},self.settings.rag_service_key)
             return await self.platform.get_knowledge_document(kb_id,doc['id'])
         except BaseException as exc:
@@ -62,7 +61,10 @@ class IngestionService:
         store=self.store
         if doc.get('embeddingVersion') and doc['embeddingVersion']!=self.embedding.version:
             from .vector_store import VectorStore
-            store=VectorStore(self.settings.qdrant_url,self.settings.qdrant_key,doc['embeddingVersion'])
-        await store.delete_document_chunks(kb_id,doc_id)
+            store=VectorStore(self.settings.qdrant_url,self.settings.qdrant_key,doc['embeddingVersion'],schema_version=self.settings.rag_vector_schema_version)
+        try:
+            await store.delete_document_chunks(kb_id,doc_id)
+        finally:
+            if store is not self.store: await asyncio.to_thread(store.close)
         self.path(doc['storageKey']).unlink(missing_ok=True)
         await self.platform.purge_knowledge_document(doc_id,self.settings.rag_service_key)

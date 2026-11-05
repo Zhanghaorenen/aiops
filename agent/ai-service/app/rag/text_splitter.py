@@ -1,18 +1,19 @@
+"""Character-based LangChain splitting; chunk_size is not a token count."""
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-def split_documents(docs, chunk_size=1000, overlap=150):
-    if not 100 <= chunk_size <= 1600 or not 0 <= overlap < chunk_size: raise ValueError('INVALID_CHUNK_CONFIGURATION')
-    result = []
+
+def split_documents(docs: list[Document], chunk_size=1000, overlap=150) -> list[Document]:
+    if type(chunk_size) is not int or type(overlap) is not int or not 100 <= chunk_size <= 1600 or not 0 <= overlap < chunk_size:
+        raise ValueError('INVALID_CHUNK_CONFIGURATION')
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size, chunk_overlap=overlap, add_start_index=True,
+        separators=['\n\n', '\n', '。', '！', '？', '；', '，', '.', ' ', ''],
+        keep_separator='end', strip_whitespace=False,
+    )
+    chunks = []
     for doc in docs:
-        text = doc.page_content.strip()
-        start = 0
-        while start < len(text):
-            end = min(start + chunk_size, len(text))
-            if end < len(text):
-                cut = max(text.rfind(sep, start+chunk_size//2, end) for sep in ('\n', '。', '；', '. ', ' '))
-                if cut >= start+chunk_size//2: end = cut+1
-            result.append(Document(page_content=text[start:end], metadata=dict(doc.metadata)))
-            if end == len(text): break
-            start = max(start+1, end-overlap)
-    if len(result)>10000: raise ValueError('TOO_MANY_CHUNKS')
-    return result
+        chunks.extend(splitter.split_documents([doc]))
+        if len(chunks) > 10000:
+            raise ValueError('TOO_MANY_CHUNKS')
+    return chunks

@@ -56,7 +56,7 @@ async def chat(payload: ChatRequest, request: Request,
                 llm,
                 ServerTool(ServerManager(platform)),
                 GpuTool(GPUManager(platform)),
-                settings.max_rounds, rag_tools=rag_tool(platform,settings),
+                settings.max_rounds, rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
             )
             answer = await asyncio.wait_for(agent.answer(payload.question, [item.model_dump() for item in payload.history]), timeout=settings.chat_timeout)
             return ChatResponse(answer=answer)
@@ -108,7 +108,7 @@ async def chat_stream(payload: ChatRequest, request: Request,
                 from .knowledge import rag_tool
                 agent = GraphAgent(
                     llm, ServerTool(ServerManager(platform)),
-                    GpuTool(GPUManager(platform)), settings.max_rounds, rag_tools=rag_tool(platform,settings),
+                    GpuTool(GPUManager(platform)), settings.max_rounds, rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
                 )
                 import anyio
                 with anyio.fail_after(settings.chat_timeout):

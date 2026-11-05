@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
-from functools import lru_cache
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials
 import httpx
+from qdrant_client.http.exceptions import UnexpectedResponse, ResponseHandlingException
 from .chat import auth_scheme, get_settings
 from ..rag.schemas import SearchRequest
 from ..rag.embedding_service import EmbeddingService
@@ -13,14 +13,14 @@ from ..rag.ingestion_service import IngestionService
 
 router=APIRouter(prefix='/api/rag',tags=['知识库'])
 
-@lru_cache(maxsize=4)
-def resources(settings):
-    return EmbeddingService(settings.embedding_path,settings.embedding_version), VectorStore(settings.qdrant_url,settings.qdrant_key,settings.embedding_version)
+def resources(request, settings):
+    return request.app.state.rag_resources.get(settings)
 
-def rag_tool(platform,settings):
+
+def rag_tool(platform, settings, manager):
     from ..tools.rag_tool import RagTool
-    embedding,store=resources(settings)
-    return RagTool(RetrievalService(platform,embedding,store))
+    embedding, store = manager.get(settings)
+    return RagTool(RetrievalService(platform, embedding, store))
 
 @asynccontextmanager
 async def session(request,credentials):
@@ -34,6 +34,8 @@ async def session(request,credentials):
     except httpx.HTTPStatusError as e:
         code=e.response.status_code
         raise HTTPException(code if code in (401,403,404,409) else 502,'知识库请求被拒绝或依赖服务异常') from e
+    except (UnexpectedResponse, ResponseHandlingException) as e:
+        raise HTTPException(503, 'Qdrant 服务不可用或响应异常') from e
     except httpx.RequestError as e: raise HTTPException(503,'知识库依赖服务不可用') from e
     except (ValueError,ImportError) as e: raise HTTPException(422,'文档无法解析或本地 Embedding 未配置，请检查格式与服务配置') from e
     finally: await platform.close()
@@ -41,26 +43,26 @@ async def session(request,credentials):
 @router.post('/knowledge-bases/{kb_id}/documents')
 async def upload_document(kb_id:int,request:Request,file:UploadFile=File(...),credentials:HTTPAuthorizationCredentials|None=Depends(auth_scheme)):
     async with session(request,credentials) as (platform,settings):
-        embedding,store=resources(settings)
+        embedding,store=resources(request,settings)
         return await IngestionService(platform,embedding,store,settings).ingest_document(kb_id,file)
 
 @router.post('/search')
 async def search_knowledge(payload:SearchRequest,request:Request,credentials:HTTPAuthorizationCredentials|None=Depends(auth_scheme)):
     async with session(request,credentials) as (platform,settings):
-        embedding,store=resources(settings)
+        embedding,store=resources(request,settings)
         return await RetrievalService(platform,embedding,store).retrieve(payload.query,payload.knowledge_base_ids,payload.top_k)
 
 @router.delete('/knowledge-bases/{kb_id}/documents/{doc_id}')
 async def delete_document(kb_id:int,doc_id:int,request:Request,credentials:HTTPAuthorizationCredentials|None=Depends(auth_scheme)):
     async with session(request,credentials) as (platform,settings):
-        embedding,store=resources(settings)
+        embedding,store=resources(request,settings)
         await IngestionService(platform,embedding,store,settings).delete_document(kb_id,doc_id)
         return {'deleted':True}
 
 @router.delete('/knowledge-bases/{kb_id}')
 async def delete_base(kb_id:int,request:Request,credentials:HTTPAuthorizationCredentials|None=Depends(auth_scheme)):
     async with session(request,credentials) as (platform,settings):
-        embedding,store=resources(settings)
+        embedding,store=resources(request,settings)
         await platform.mark_knowledge_base_deleting(kb_id)
         for doc in await platform.list_knowledge_documents(kb_id):
             await IngestionService(platform,embedding,store,settings).delete_document(kb_id,doc['id'])
