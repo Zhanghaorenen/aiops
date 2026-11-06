@@ -15,6 +15,53 @@ const storage = new Map()
 const events = new EventTarget()
 const testToken = 'frontend-test-placeholder'
 const signedIn = () => ({ token: testToken, demo: false })
+
+test('CPU temperature only uses CPU sensors and rejects unsupported or expired evidence', async () => {
+  const {cpuTemperature,primaryTemperature,temperatureHint,freshSample}=await vite.ssrLoadModule('/src/utils/temperature.ts')
+  const details={temperatureStatus:'AVAILABLE',temperatures:[{category:'STORAGE',currentCelsius:90},{category:'CPU',currentCelsius:61},{category:'CPU',currentCelsius:65}]}
+  assert.equal(cpuTemperature(details),65)
+  assert.deepEqual(primaryTemperature(details),{category:'CPU',label:'CPU 最高温度',value:65})
+  assert.deepEqual(primaryTemperature({temperatureStatus:'AVAILABLE',temperatures:[{category:'STORAGE',currentCelsius:40.9}]}),{category:'STORAGE',label:'存储最高温度',value:40.9})
+  assert.equal(primaryTemperature({temperatureStatus:'UNAVAILABLE'}),null)
+  assert.equal(cpuTemperature({...details,temperatureStatus:'UNAVAILABLE'}),null)
+  assert.equal(cpuTemperature({temperatureStatus:'AVAILABLE',temperatures:[{category:'STORAGE',currentCelsius:90}]}),null)
+  assert.equal(cpuTemperature(),null)
+  assert.match(temperatureHint({temperatureStatus:'UNSUPPORTED'}),/未提供/)
+  const now=Date.parse('2026-11-06T05:00:00Z')
+  assert.equal(freshSample('2026-11-06T04:59:45Z',now),true)
+  assert.equal(freshSample('2026-11-06T04:55:00Z',now),false)
+  assert.equal(freshSample('2026-11-06T05:05:00Z',now),false)
+})
+
+test('resource gauges display real readings and keep missing values distinct from zero', async () => {
+  const Gauge=(await vite.ssrLoadModule('/src/components/ResourceGauge.vue')).default
+  const real=await renderToString(createSSRApp(Gauge,{label:'CPU 最高温度',unit:'°C',value:63.5,max:120}))
+  assert.match(real,/CPU 最高温度：63.5°C/)
+  const zero=await renderToString(createSSRApp(Gauge,{label:'CPU 使用率',value:0}))
+  assert.match(zero,/CPU 使用率：0.0%/)
+  const missing=await renderToString(createSSRApp(Gauge,{label:'CPU 最高温度',value:null}))
+  assert.match(missing,/CPU 最高温度：暂无数据/)
+  assert.doesNotMatch(missing,/class="gauge-fill"/)
+})
+
+test('knowledge templates cover all four document types and Markdown preview escapes HTML', async () => {
+  const {knowledgeTemplates}=await vite.ssrLoadModule('/src/utils/knowledgeTemplates.ts')
+  assert.deepEqual(knowledgeTemplates.map(t=>t.key),['environment','manual','sop','case'])
+  for(const template of knowledgeTemplates){assert.match(template.content, /^# /);assert.ok(template.content.includes('待填写'))}
+  const Preview=(await vite.ssrLoadModule('/src/components/MarkdownPreview.vue')).default
+  const html=await renderToString(createSSRApp(Preview,{text:'# SOP\n\n<script>alert(1)</script>\n```bash\necho test\n```'}))
+  assert.ok(html.includes('<h1>SOP</h1>'))
+  assert.ok(!html.includes('<script>'))
+  assert.ok(html.includes('&lt;script&gt;'))
+})
+
+test('legacy UTC timestamps and binary byte units are displayed consistently', async () => {
+  const {formatTime,formatBytes}=await vite.ssrLoadModule('/src/utils/format.ts')
+  assert.equal(formatTime('2026-11-06T03:00:00'),formatTime('2026-11-06T03:00:00Z'))
+  assert.equal(formatBytes(1024),'1.0 KiB')
+  assert.equal(formatBytes(null),'—')
+  assert.equal(formatBytes(0),'0 B')
+})
 const defer = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 
 before(async () => {

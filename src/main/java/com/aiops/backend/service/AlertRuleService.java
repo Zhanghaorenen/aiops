@@ -12,6 +12,113 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AlertRuleService {
+  public record PresetRequest(
+      @NotNull @Size(min = 1, max = 100) List<@NotNull Long> serverIds,
+      @NotBlank String presetKey,
+      Double threshold) {}
+
+  private static final Map<String, double[]> DEFAULTS =
+      Map.of(
+          "SERVER_OFFLINE",
+          new double[] {90, 30, 0},
+          "CPU_HIGH",
+          new double[] {90, 75, 60},
+          "MEMORY_HIGH",
+          new double[] {90, 75, 60},
+          "DISK_HIGH",
+          new double[] {90, 80, 60},
+          "GPU_TEMP_HIGH",
+          new double[] {85, 80, 60},
+          "GPU_MEMORY_HIGH",
+          new double[] {95, 85, 60});
+
+  public List<Map<String, Object>> presets() {
+    access.currentUser();
+    var names =
+        Map.of(
+            "SERVER_OFFLINE",
+            "服务器离线",
+            "CPU_HIGH",
+            "CPU 高占用",
+            "MEMORY_HIGH",
+            "内存高占用",
+            "DISK_HIGH",
+            "磁盘空间不足",
+            "GPU_TEMP_HIGH",
+            "GPU 温度过高",
+            "GPU_MEMORY_HIGH",
+            "GPU 显存紧张");
+    return DEFAULTS.entrySet().stream()
+        .sorted(Map.Entry.comparingByKey())
+        .map(
+            e ->
+                Map.<String, Object>of(
+                    "key",
+                    e.getKey(),
+                    "name",
+                    names.get(e.getKey()),
+                    "threshold",
+                    e.getValue()[0],
+                    "recoveryThreshold",
+                    e.getValue()[1],
+                    "durationSeconds",
+                    e.getValue()[2],
+                    "unit",
+                    e.getKey().equals("SERVER_OFFLINE")
+                        ? "秒"
+                        : e.getKey().equals("GPU_TEMP_HIGH") ? "°C" : "%",
+                    "description",
+                    e.getKey().equals("GPU_MEMORY_HIGH")
+                        ? "资源占用提示，不直接判定故障；阈值可调整。"
+                        : "按新鲜样本与持续时间判定，初始建议值可调整。"))
+        .toList();
+  }
+
+  @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+  public Map<String, Integer> applyPreset(PresetRequest req) {
+    var defaults = DEFAULTS.get(req.presetKey());
+    if (defaults == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "未知预设策略");
+    double threshold = req.threshold() == null ? defaults[0] : req.threshold();
+    if (!Double.isFinite(threshold) || threshold <= 0)
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "阈值必须为正数");
+    var ids = req.serverIds().stream().distinct().sorted().toList();
+    for (var id : ids) access.requireNode(id, ClusterPermission.ALERT_RULE_MANAGE);
+    int added = 0, skipped = 0;
+    for (var id : ids) {
+      jdbc.queryForMap("SELECT id FROM ops_node WHERE id=? FOR UPDATE", id);
+      if (jdbc.queryForObject(
+              "SELECT COUNT(*) FROM ops_alert_rule WHERE server_id=? AND metric=?",
+              Long.class,
+              id,
+              req.presetKey())
+          > 0) {
+        skipped++;
+        continue;
+      }
+      var node = access.requireNode(id, ClusterPermission.ALERT_RULE_MANAGE);
+      jdbc.update(
+          "INSERT INTO"
+              + " ops_alert_rule(cluster_id,server_id,name,metric,comparison,threshold_value,recovery_threshold,duration_seconds,freshness_seconds,max_gap_seconds,cooldown_seconds,severity,enabled,created_at,updated_at,preset_key)"
+              + " VALUES(?,?,?,?,'GE',?,?,?,?,?,300,?,TRUE,?,?,?)",
+          node.getClusterId(),
+          id,
+          "预设 · " + req.presetKey(),
+          req.presetKey(),
+          threshold,
+          Math.min(defaults[1], threshold * 0.9),
+          (int) defaults[2],
+          90,
+          45,
+          req.presetKey().equals("GPU_MEMORY_HIGH") ? "INFO" : "WARNING",
+          now(),
+          now(),
+          req.presetKey());
+      access.audit(node.getClusterId(), "ALERT_PRESET_ADD", id, req.presetKey());
+      added++;
+    }
+    return Map.of("added", added, "skipped", skipped);
+  }
+
   private final JdbcTemplate jdbc;
   private final ClusterPermissionService access;
 
@@ -52,7 +159,7 @@ public class AlertRuleService {
         ids.toArray());
   }
 
-  @Transactional
+  @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
   public void save(Long id, Rule r) {
     var node = access.requireNode(r.serverId(), ClusterPermission.ALERT_RULE_MANAGE);
     if (!Double.isFinite(r.threshold())

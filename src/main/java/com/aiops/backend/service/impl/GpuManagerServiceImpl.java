@@ -55,6 +55,7 @@ public class GpuManagerServiceImpl implements GpuManagerService {
     response.put("collectedAt", snapshot.getCollectedAt());
     response.put("receivedAt", snapshot.getReceivedAt());
     response.put("gpuCount", gpuSamples.size());
+    response.put("details", gpuSamples.stream().map(GpuSampleEntity::getDetails).toList());
     response.put("gpuIndices", gpuSamples.stream().map(GpuSampleEntity::getGpuIndex).toList());
     response.put("gpuUuids", gpuSamples.stream().map(GpuSampleEntity::getGpuUuid).toList());
     response.put("gpuNames", gpuSamples.stream().map(GpuSampleEntity::getGpuName).toList());
@@ -134,6 +135,7 @@ public class GpuManagerServiceImpl implements GpuManagerService {
       row.put("taskType", process.getTaskType());
       row.put("collectedAt", process.getCollectedAt());
       row.put("receivedAt", process.getReceivedAt());
+      row.putAll(process.getDetails());
       result.add(row);
     }
     return result;
@@ -179,6 +181,7 @@ public class GpuManagerServiceImpl implements GpuManagerService {
   private Map<String, Object> toGpuMap(GpuSampleEntity sample) {
     Map<String, Object> gpu = new LinkedHashMap<>();
     gpu.put("serverId", sample.getNodeId());
+    gpu.putAll(sample.getDetails());
     gpu.put("gpuIndex", sample.getGpuIndex());
     gpu.put("gpuUuid", sample.getGpuUuid());
     gpu.put("gpuName", sample.getGpuName());

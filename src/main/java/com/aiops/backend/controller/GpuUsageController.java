@@ -16,13 +16,24 @@ public class GpuUsageController {
   }
 
   @GetMapping
-  public List<Map<String, Object>> list(@PathVariable Long serverId) {
-    return service.list(serverId);
+  public List<Map<String, Object>> list(
+      @PathVariable Long serverId,
+      @RequestParam(required = false) java.time.Instant from,
+      @RequestParam(required = false) java.time.Instant to) {
+    return service.list(serverId, from, to);
   }
 
   @PostMapping
   public void create(@PathVariable Long serverId, @Valid @RequestBody GpuUsageService.Usage req) {
     service.create(serverId, req);
+  }
+
+  @PutMapping("/{id}")
+  public void update(
+      @PathVariable Long serverId,
+      @PathVariable Long id,
+      @Valid @RequestBody GpuUsageService.Usage req) {
+    service.update(serverId, id, req);
   }
 
   @PatchMapping("/{id}/status")

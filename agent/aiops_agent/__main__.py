@@ -159,6 +159,9 @@ class Agent:
                 "memoryUtilizationPercent": gpu.get("memory_utilization_percent"),
                 "temperatureC": gpu.get("temperature_c"),
                 "powerUsageW": gpu.get("power_w"),
+                "fanSpeedPercent": gpu.get("fan_speed"),
+                "clockSpeedMhz": gpu.get("clock_speed"),
+                "details": gpu.get("details"),
                 "processes": [
                     {
                         "pid": process.get("pid"),
@@ -167,6 +170,7 @@ class Agent:
                         "gpuMemoryUsageBytes": process.get("gpu_memory_bytes"),
                         "taskType": process.get("task_type"),
                         "gpuIndex": gpu_index,
+                        "details": process.get("details"),
                     }
                     for process in gpu.get("processes", [])
                 ],
@@ -175,6 +179,7 @@ class Agent:
         gpu_errors = [error for error in snapshot["errors"] if error.startswith("gpu:")]
 
         return {
+            "details": system.get("details"),
             "cpuPercent": system["cpu"]["percent"],
             "memoryTotalBytes": system["memory"]["total"],
             "memoryUsedBytes": system["memory"]["used"],

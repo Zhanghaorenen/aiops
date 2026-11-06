@@ -32,6 +32,68 @@ public class IncidentService {
     return LocalDateTime.now(ZoneOffset.UTC);
   }
 
+  @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+  public Map<String, Object> fromAlert(Long alertId, String key, boolean retry) {
+    var alert = alerts.event(alertId);
+    access.requireNode(
+        ((Number) alert.get("server_id")).longValue(), ClusterPermission.AI_DIAGNOSE);
+    // 锁告警实体串行化自动关联，避免并发点击产生多个 Incident。
+    jdbc.queryForMap("SELECT id FROM ops_alert_event WHERE id=? FOR UPDATE", alertId);
+    var existing =
+        jdbc.queryForList("SELECT id FROM ops_incident WHERE source_alert_id=?", alertId);
+    long id;
+    if (existing.isEmpty()) {
+      var created = createForAlert(alertId, alert);
+      id = ((Number) created.get("id")).longValue();
+    } else id = ((Number) existing.get(0).get("id")).longValue();
+    var active =
+        jdbc.queryForList(
+            "SELECT id FROM ops_investigation_run WHERE incident_id=? AND status IN"
+                + " ('PENDING','RUNNING')",
+            id);
+    var previous =
+        jdbc.queryForList(
+            "SELECT id,status FROM ops_investigation_run WHERE incident_id=? AND requested_by=?"
+                + " ORDER BY id DESC LIMIT 1",
+            id,
+            access.currentUser().getId());
+    if (active.isEmpty() && (previous.isEmpty() || retry)) investigate(id, key);
+    var result = new LinkedHashMap<String, Object>();
+    result.put("incidentId", id);
+    result.put("incident", detail(id));
+    return result;
+  }
+
+  private Map<String, Object> createForAlert(Long alertId, Map<String, Object> alert) {
+    long server = ((Number) alert.get("server_id")).longValue();
+    var node = access.requireNode(server, ClusterPermission.AI_DIAGNOSE);
+    var key = new org.springframework.jdbc.support.GeneratedKeyHolder();
+    jdbc.update(
+        c -> {
+          var ps =
+              c.prepareStatement(
+                  "INSERT INTO"
+                      + " ops_incident(cluster_id,server_id,title,description,status,created_by,created_at,updated_at,source_alert_id)"
+                      + " VALUES(?,?,?,?,'OPEN',?,?,?,?)",
+                  java.sql.Statement.RETURN_GENERATED_KEYS);
+          ps.setLong(1, node.getClusterId());
+          ps.setLong(2, server);
+          ps.setString(3, "告警 #" + alertId + " · " + alert.get("severity"));
+          ps.setString(
+              4, "告警时间：" + alert.get("first_triggered_at") + "；原始证据：" + alert.get("evidence"));
+          ps.setLong(5, access.currentUser().getId());
+          ps.setObject(6, now());
+          ps.setObject(7, now());
+          ps.setLong(8, alertId);
+          return ps;
+        },
+        key);
+    long id = key.getKey().longValue();
+    jdbc.update("INSERT INTO ops_incident_alert VALUES(?,?)", id, alertId);
+    history(id, "CREATED_FROM_ALERT", Long.toString(alertId));
+    return get(id);
+  }
+
   public Map<String, Object> get(Long id) {
     var row =
         jdbc.queryForList("SELECT * FROM ops_incident WHERE id=?", id).stream()
@@ -97,7 +159,7 @@ public class IncidentService {
     history(id, "STATUS", state);
   }
 
-  @Transactional
+  @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
   public Map<String, Object> investigate(Long id, String requestKey) {
     var row =
         jdbc.queryForList("SELECT * FROM ops_incident WHERE id=? FOR UPDATE", id).stream()

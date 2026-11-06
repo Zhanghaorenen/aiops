@@ -1,6 +1,8 @@
 # AIOps Python Agent
 
-Python 3.10+ Agent for Windows and Linux. It samples host CPU, memory, and the system drive/root disk with `psutil`, then sends JSON to the backend over HTTP or HTTPS. NVIDIA GPU collection is available locally when the NVIDIA driver is installed; GPU data is not part of the current backend metrics API.
+Python 3.10+ Agent for Windows and Linux. It samples host CPU, memory, and the system drive/root disk with `psutil`, then sends JSON to the backend over HTTP or HTTPS. NVIDIA GPU metrics and necessary process fields are collected through NVML and reported through the same authenticated metrics API.
+
+Linux 后台部署、Tailscale 通信和令牌配置见 [部署脚本说明](deploy/linux/README.md)。本次服务器的实际部署与验收状态见 [部署记录](../docs/agent-server-deployment.md)。一次性注册令牌由工作空间 ADMIN 签发。
 
 ## Setup
 

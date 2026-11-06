@@ -15,6 +15,14 @@ public class IncidentController {
     this.service = service;
   }
 
+  @PostMapping("/alerts/{alertId}/investigation")
+  public Map<String, Object> fromAlert(
+      @PathVariable Long alertId,
+      @RequestHeader("Idempotency-Key") String key,
+      @RequestParam(defaultValue = "false") boolean retry) {
+    return service.fromAlert(alertId, key, retry);
+  }
+
   @GetMapping("/incidents")
   public List<Map<String, Object>> list() {
     return service.list();

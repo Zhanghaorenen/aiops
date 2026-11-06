@@ -3,6 +3,8 @@
 本目录部署在中心服务器，连接 Spring Boot 和用户提供的 OpenAI 兼容模型服务。
 被管理机器只需要 `agent/aiops_agent` 与 `agent/requirements.txt`；不要在被管理机器安装此 AI 服务或大模型。
 
+**当前本机已接入 DeepSeek 与真实中文知识库。** 模型、Qdrant、Embedding、私有配置启动方式及真实验证结果见 [接入记录](../../docs/deepseek-knowledge-setup.md)。本机重启 AI 使用 `./start-private.ps1`，配置文件受 Git 忽略；下方阶段 A 的接口范围属于历史阶段说明，现有 GPU、RAG 和流式功能以接入记录及实际代码为准。
+
 ## 安装与启动
 
 在此目录使用 Python 3.10+：

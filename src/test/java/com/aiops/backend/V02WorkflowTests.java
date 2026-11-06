@@ -212,13 +212,17 @@ class V02WorkflowTests extends ClusterTestSupport {
             3,
             "training",
             "experiment",
-            Instant.now(),
+            Instant.now().plusSeconds(60),
             Instant.now().plusSeconds(3600),
             "人工登记",
             "PLANNED"));
     var row = usage.list(n.nodeId()).get(0);
     assertEquals("UNVERIFIED", row.get("verification"));
     long task = ((Number) row.get("id")).longValue();
+    testJdbc.update(
+        "UPDATE ops_gpu_usage SET starts_at=? WHERE id=?",
+        LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1),
+        task);
     usage.status(n.nodeId(), task, "RUNNING");
     usage.status(n.nodeId(), task, "COMPLETED");
     assertThrows(

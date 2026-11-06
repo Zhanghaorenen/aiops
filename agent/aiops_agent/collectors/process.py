@@ -1,58 +1,44 @@
-
+"""GPU PID 关联的有限进程信息；不读取命令参数或环境变量。"""
+from datetime import datetime, timezone
 import psutil
 
 
 class ProcessCollector:
+    def __init__(self):
+        self._processes = {}
 
-    def get_process_info(self, pid: int) -> dict | None:
+    def get_process_info(self, pid):
         try:
-            process = psutil.Process(pid)
-
-            return {
-                "pid": process.pid,
-                "name": process.name(),
-                "status": process.status(),
-                "cmdline": process.cmdline(),
-            "cpu_percent": process.cpu_percent(interval=None),
-                "create_time": process.create_time(),
-                "num_threads": process.num_threads(),
-                "username": process.username()
-            }
-
+            current = psutil.Process(pid)
+            identity = (pid, current.create_time())
+            process = self._processes.get(identity, current)
+            first = identity not in self._processes
+            self._processes[identity] = process
+            if len(self._processes) > 2048:
+                self._processes = {identity: process}
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             return None
+        output = {"pid": pid}
 
-    def classify_task(self, process_info: dict) -> str:
-        # 进程名
-        if not isinstance(process_info, dict):
-            return "Unknown"
-        name = (process_info.get("name") or "").lower()
+        def read(name, getter):
+            try:
+                output[name] = getter()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError):
+                output[name] = None
 
-        # 启动命令
-        cmdline = " ".join(process_info.get("cmdline") or []).lower()
+        for name, getter in [("name", process.name), ("username", process.username), ("status", process.status),
+                             ("executablePath", process.exe), ("workingDirectory", process.cwd),
+                             ("numThreads", process.num_threads), ("memoryRssBytes", lambda: process.memory_info().rss),
+                             ("startedAt", lambda: datetime.fromtimestamp(identity[1], timezone.utc).isoformat())]:
+            read(name, getter)
+        read("cpuPercent", lambda: process.cpu_percent(interval=None))
+        if first:
+            output["cpuPercent"] = None
+        return output
 
-        # 1. 深度学习任务
-        if any(k in cmdline for k in ["torchrun", "train.py", "deepspeed"]):
-            return "Deep Learning Training"
-
-        # 2. AI 推理服务
-        elif any(k in cmdline for k in ["vllm", "ollama", "tritonserver"]):
-            return "AI Inference"
-
-        # 3. Web 服务
-        elif any(k in cmdline for k in ["uvicorn", "gunicorn", "fastapi"]):
-            return "Web Service"
-
-        # 4. Java 服务
-        elif "java" in name:
-            return "Java Application"
-
-        # 5. Nginx
-        elif "nginx" in name:
-            return "Web Server"
-
-        # 6. 其他 Python 任务
-        elif "python" in name:
-            return "Python Task"
-
+    def classify_task(self, process_info):
+        name = (process_info.get("name") or "").lower() if isinstance(process_info, dict) else ""
+        if "python" in name: return "Python Task"
+        if "java" in name: return "Java Application"
+        if any(s in name for s in ["ollama", "vllm", "triton"]): return "AI Inference"
         return "Unknown"

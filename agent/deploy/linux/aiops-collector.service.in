@@ -1,0 +1,22 @@
+[Unit]
+Description=AIOps host and GPU collector
+After=network-online.target
+# 未配置令牌时保持待接入，避免无效注册和重启刷日志。
+ConditionPathExists=@ROOT@/agent.env
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+EnvironmentFile=@ROOT@/agent.env
+ExecStart=@ROOT@/.venv/bin/python -u -m aiops_agent
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=1
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

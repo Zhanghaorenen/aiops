@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api, errorMessage } from '../api'
 import { useWorkspaceStore } from '../stores/workspace'
+const props = defineProps<{ incidentId?: number; detailOnly?: boolean }>()
 const store = useWorkspaceStore(),
   items = ref<any[]>([]),
   detail = ref<any>(null),
@@ -10,12 +11,6 @@ const store = useWorkspaceStore(),
   busy = ref(false),
   reviewNote = ref(''),
   canManage = computed(() => ['ADMIN', 'OPERATOR'].includes(store.role))
-const form = reactive({
-  serverId: undefined as number | undefined,
-  title: '',
-  description: '',
-  alertIds: [] as number[],
-})
 function row(r: any): any {
   if (Array.isArray(r)) return r.map(row)
   if (r && typeof r === 'object')
@@ -43,16 +38,6 @@ async function run(fn: () => Promise<void>) {
 }
 async function open(id: number) {
   detail.value = row((await api.get(`/api/incidents/${id}`)).data)
-}
-async function create() {
-  await run(async () => {
-    const { data } = await api.post('/api/incidents', form)
-    form.title = ''
-    form.description = ''
-    form.alertIds = []
-    await load()
-    await open(data.id ?? data.ID)
-  })
 }
 const keys = new Map<number, string>()
 async function investigate() {
@@ -92,7 +77,16 @@ async function review(id: number, helpful: boolean) {
     await open(detail.value.id)
   })
 }
-onMounted(() => void run(load))
+watch(
+  () => props.incidentId,
+  (id) => {
+    if (id) void run(() => open(id))
+  },
+  { immediate: true },
+)
+onMounted(() => {
+  if (!props.detailOnly) void run(load)
+})
 const timer = setInterval(() => {
   if (!busy.value) void run(load)
 }, 5000)
@@ -108,46 +102,8 @@ const columns = [
 <template>
   <a-space direction="vertical" style="width: 100%" :size="16"
     ><a-alert v-if="error" type="error" :message="error" /><a-card
-      v-if="canManage"
-      title="建立故障事件"
-      ><a-form @finish="create"
-        ><a-space wrap
-          ><a-select
-            v-model:value="form.serverId"
-            placeholder="服务器"
-            :options="
-              store.servers.map((s) => ({ value: s.id, label: s.name }))
-            "
-            style="width: 200px" /><a-input
-            v-model:value="form.title"
-            placeholder="标题"
-            :maxlength="200" /><a-select
-            v-model:value="form.alertIds"
-            mode="multiple"
-            placeholder="关联同服务器告警"
-            :options="
-              alerts
-                .filter((a) => a.server_id === form.serverId)
-                .map((a) => ({
-                  value: a.id,
-                  label: `#${a.id} ${a.severity} ${a.status}`,
-                }))
-            "
-            style="width: 280px" /></a-space
-        ><a-textarea
-          v-model:value="form.description"
-          placeholder="异常现象和发生时间"
-          :maxlength="2000"
-          style="margin: 12px 0"
-        /><a-button
-          html-type="submit"
-          type="primary"
-          :loading="busy"
-          :disabled="!form.serverId || !form.title"
-          >创建</a-button
-        ></a-form
-      ></a-card
-    ><a-card title="故障事件"
+      v-if="!detailOnly"
+      title="历史故障调查"
       ><a-table :columns="columns" :data-source="items" row-key="id"
         ><template #bodyCell="{ column, record }"
           ><a-button
@@ -229,6 +185,17 @@ const columns = [
             {{ step }}
           </li>
         </ol>
+        <h3>后续验证方法</h3>
+        <ul>
+          <li
+            v-for="step in report(item.report_json).verification_steps ?? [
+              '人工处理后，比较同一 GPU 和相同时间窗口的原始指标与恢复阈值，核实告警及任务所有者反馈。',
+            ]"
+            :key="step"
+          >
+            {{ step }}
+          </li>
+        </ul>
         <h3>实际检索来源</h3>
         <p
           v-for="source in report(item.report_json).references"

@@ -200,6 +200,9 @@ public class AgentAccessService {
                 percent(request.diskUsedBytes(), request.diskTotalBytes()),
                 collectedAt,
                 now));
+    saved.setDetailsJson(
+        com.aiops.backend.persistence.MetricDetails.encode(request.details(), "HOST"));
+    metrics.save(saved);
     recordGpuSnapshot(agent, request, collectedAt, now);
     return saved;
   }
@@ -253,12 +256,15 @@ public class AgentAccessService {
                   gpu.clockSpeedMhz(),
                   collectedAt,
                   receivedAt));
+      sample.setDetailsJson(
+          com.aiops.backend.persistence.MetricDetails.encode(gpu.details(), "GPU"));
+      gpuSamples.save(sample);
       if (gpu.processes() == null) continue;
       for (GpuProcessRequest process : gpu.processes()) {
         if (process.gpuIndex() != null && !gpu.gpuIndex().equals(process.gpuIndex())) {
           throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "GPU 进程 gpuIndex 与所属 GPU 不一致");
         }
-        gpuProcesses.save(
+        var processSample =
             new GpuProcessSampleEntity(
                 snapshot.getId(),
                 agent.getNodeId(),
@@ -270,7 +276,10 @@ public class AgentAccessService {
                 process.gpuMemoryUsageBytes(),
                 process.taskType(),
                 collectedAt,
-                receivedAt));
+                receivedAt);
+        processSample.setDetailsJson(
+            com.aiops.backend.persistence.MetricDetails.encode(process.details(), "PROCESS"));
+        gpuProcesses.save(processSample);
       }
     }
   }
@@ -451,7 +460,21 @@ public class AgentAccessService {
       Instant collectedAt,
       String gpuStatus,
       @Size(max = 32) List<@Valid GpuSampleRequest> gpus,
-      @Size(max = 1024) String gpuError) {
+      @Size(max = 1024) String gpuError,
+      java.util.Map<String, Object> details) {
+    public MetricRequest(
+        Double cpu,
+        Long mt,
+        Long mu,
+        Long dt,
+        Long du,
+        Instant at,
+        String status,
+        List<GpuSampleRequest> gpus,
+        String error) {
+      this(cpu, mt, mu, dt, du, at, status, gpus, error, null);
+    }
+
     public MetricRequest(
         Double cpuPercent,
         Long memoryTotalBytes,
@@ -466,6 +489,7 @@ public class AgentAccessService {
           diskTotalBytes,
           diskUsedBytes,
           collectedAt,
+          null,
           null,
           null,
           null);
@@ -485,7 +509,25 @@ public class AgentAccessService {
       @DecimalMin("0") java.math.BigDecimal powerUsageW,
       @DecimalMin("0") @DecimalMax("100") java.math.BigDecimal fanSpeedPercent,
       @DecimalMin("0") java.math.BigDecimal clockSpeedMhz,
-      @Size(max = 256) List<@Valid GpuProcessRequest> processes) {}
+      @Size(max = 256) List<@Valid GpuProcessRequest> processes,
+      java.util.Map<String, Object> details) {
+    public GpuSampleRequest(
+        Integer i,
+        String u,
+        String n,
+        Long t,
+        Long used,
+        Long free,
+        java.math.BigDecimal util,
+        java.math.BigDecimal mem,
+        java.math.BigDecimal temp,
+        java.math.BigDecimal power,
+        java.math.BigDecimal fan,
+        java.math.BigDecimal clock,
+        List<GpuProcessRequest> processes) {
+      this(i, u, n, t, used, free, util, mem, temp, power, fan, clock, processes, null);
+    }
+  }
 
   public record GpuProcessRequest(
       @NotNull @Positive Long pid,
@@ -493,5 +535,11 @@ public class AgentAccessService {
       @Size(max = 160) String username,
       @DecimalMin("0") Long gpuMemoryUsageBytes,
       @Size(max = 80) String taskType,
-      @Min(0) Integer gpuIndex) {}
+      @Min(0) Integer gpuIndex,
+      java.util.Map<String, Object> details) {
+    public GpuProcessRequest(
+        Long pid, String name, String user, Long memory, String type, Integer index) {
+      this(pid, name, user, memory, type, index, null);
+    }
+  }
 }

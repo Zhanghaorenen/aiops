@@ -84,6 +84,7 @@ class GPUInfo:
                     record["name"] = detail.get("name")
                     record["username"] = detail.get("username")
 
+                    record["details"] = {key: detail.get(key) for key in ("cpuPercent","memoryRssBytes","numThreads","startedAt","status","executablePath","workingDirectory")}
                     record["task_type"] = (
                         self.process_collector.classify_task(detail)
                     )
@@ -131,6 +132,7 @@ class GPUInfo:
 
             if count == 0:
                 self.collection_status = "NO_GPU"
+                return []
             else:
                 self.collection_status = "AVAILABLE"
 
@@ -231,6 +233,12 @@ class GPUInfo:
                         if power_mw is not None else None
                     ),
 
+                    "fan_speed": self._read("fan_speed", lambda: pynvml.nvmlDeviceGetFanSpeed(handle), errors),
+                    "clock_speed": self._read("clock_speed", lambda: pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS), errors),
+                    "details": {
+                        "powerLimitW": self._read("power_limit",lambda: pynvml.nvmlDeviceGetEnforcedPowerLimit(handle)/1000, errors),
+                        "memoryClockMhz": self._read("memory_clock",lambda: pynvml.nvmlDeviceGetClockInfo(handle,pynvml.NVML_CLOCK_MEM),errors),
+                    },
                     "processes": self._processes(handle, errors),
 
                     "errors": errors,

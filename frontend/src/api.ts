@@ -86,7 +86,23 @@ export interface Server {
  * @property {string} receivedAt - 指标接收时间
  *
  */
+export interface TemperatureSensor {
+  sensor: string
+  label: string
+  category: 'CPU' | 'BOARD' | 'STORAGE' | 'OTHER'
+  currentCelsius: number
+  highCelsius?: number | null
+  criticalCelsius?: number | null
+}
+
+export interface HostDetails extends Record<string, any> {
+  temperatureStatus?: 'AVAILABLE' | 'UNSUPPORTED' | 'UNAVAILABLE'
+  temperatures?: TemperatureSensor[]
+}
+
 export interface MetricSample {
+  details?: HostDetails
+
 
   id: number
   nodeId: number
@@ -102,6 +118,8 @@ export interface MetricSample {
 }
 
 export interface GpuSnapshot {
+  details?: Record<string, any>[]
+
   serverId: number
   collectionStatus: 'AVAILABLE' | 'NO_GPU' | 'UNAVAILABLE' | 'FAILED' | 'UNKNOWN' | 'UNREPORTED' | string
   collectedAt: string
@@ -140,6 +158,8 @@ export interface GpuHistorySample {
 }
 
 export interface GpuProcess {
+  cpuPercent?: number|null; memoryRssBytes?: number|null; numThreads?: number|null; startedAt?: string|null; status?: string|null; executablePath?: string|null; workingDirectory?: string|null
+
   serverId: number
   gpuIndex: number
   gpuUuid?: string | null

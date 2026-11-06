@@ -14,6 +14,16 @@ public class AlertController {
     this.service = service;
   }
 
+  @GetMapping("/alert-presets")
+  public List<Map<String, Object>> presets() {
+    return service.presets();
+  }
+
+  @PostMapping("/alert-presets/apply")
+  public Map<String, Integer> apply(@Valid @RequestBody AlertRuleService.PresetRequest req) {
+    return service.applyPreset(req);
+  }
+
   @GetMapping("/alert-rules")
   public List<Map<String, Object>> rules() {
     return service.rules();

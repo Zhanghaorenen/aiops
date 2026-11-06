@@ -1,6 +1,7 @@
 """OpenAI-compatible Chat Completions adapter; no model name or key is embedded."""
 
 from openai import AsyncOpenAI
+from urllib.parse import urlsplit
 
 
 class ModelResponseError(RuntimeError):
@@ -8,14 +9,32 @@ class ModelResponseError(RuntimeError):
 
 
 class LLMClient:
-    def __init__(self, model: str, base_url: str, api_key: str, timeout: float = 30.0,
-                 http_client=None):
+    def __init__(
+        self,
+        model: str,
+        base_url: str,
+        api_key: str,
+        timeout: float = 30.0,
+        http_client=None,
+    ):
         self.model = model
-        self.client = AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=timeout,
-                                  max_retries=1, http_client=http_client)
+        # DeepSeek 默认思考模式要求多轮回传 reasoning_content。当前图只保存工具和正文，
+        # 因此使用官方非思考工具协议，避免第二轮工具结果提交时收到 400。
+        self.request_options = (
+            {"extra_body": {"thinking": {"type": "disabled"}}}
+            if urlsplit(base_url).hostname == "api.deepseek.com"
+            else {}
+        )
+        self.client = AsyncOpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            timeout=timeout,
+            max_retries=1,
+            http_client=http_client,
+        )
 
     async def chat(self, messages: list[dict], tools=None):
-        kwargs = {"model": self.model, "messages": messages}
+        kwargs = {"model": self.model, "messages": messages, **self.request_options}
         if tools:
             kwargs.update(tools=tools, tool_choice="auto")
         completion = await self.client.chat.completions.create(**kwargs)
@@ -28,7 +47,12 @@ class LLMClient:
 
     async def stream_chat(self, messages: list[dict], tools=None):
         """Yield model text deltas and complete OpenAI-format tool calls."""
-        kwargs = {"model": self.model, "messages": messages, "stream": True}
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            **self.request_options,
+        }
         if tools:
             kwargs.update(tools=tools, tool_choice="auto")
 
@@ -42,10 +66,14 @@ class LLMClient:
                 if isinstance(delta.content, str) and delta.content:
                     yield {"type": "token", "text": delta.content}
                 for fragment in delta.tool_calls or []:
-                    call = tool_calls.setdefault(fragment.index, {
-                        "id": "", "type": "function",
-                        "function": {"name": "", "arguments": ""},
-                    })
+                    call = tool_calls.setdefault(
+                        fragment.index,
+                        {
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        },
+                    )
                     if fragment.id:
                         call["id"] = fragment.id
                     if fragment.type:
@@ -57,7 +85,10 @@ class LLMClient:
                             call["function"]["arguments"] += fragment.function.arguments
 
         if tool_calls:
-            yield {"type": "tool_calls", "calls": [tool_calls[index] for index in sorted(tool_calls)]}
+            yield {
+                "type": "tool_calls",
+                "calls": [tool_calls[index] for index in sorted(tool_calls)],
+            }
 
     async def close(self):
         await self.client.close()

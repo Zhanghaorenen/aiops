@@ -26,6 +26,7 @@ class Analysis(BaseModel):
     possible_causes: list[Cause] = Field(max_length=6)
     missing_evidence: list[str] = Field(max_length=12)
     suggested_steps: list[str] = Field(max_length=12)
+    verification_steps: list[str] = Field(default_factory=list, max_length=12)
 
 
 class State(TypedDict):
@@ -246,9 +247,15 @@ class IncidentGraph:
                 "incident_id": state["incident_id"],
                 "server_id": state["server_id"],
                 "generated_at": datetime.now(timezone.utc).isoformat(),
+                "phenomenon": state["question"],
+                "anomaly_time": self.window_end(state).isoformat(),
                 "evidence": state["evidence"],
                 "confirmed_facts": "仅 evidence 中带原始采集时间的数据可作为观察事实；不是根因确认。",
                 **state["analysis"],
+                "verification_steps": state["analysis"].get("verification_steps")
+                or [
+                    "由运维人员处理后，比较同一服务器/GPU 的原始指标、恢复阈值和处理前时间窗口，并核对任务使用者反馈。"
+                ],
                 "references": state["sources"],
                 "collection_errors": state["errors"],
                 "model": self.llm.model,
