@@ -46,6 +46,29 @@ class SystemCollector:
                     return "AVAILABLE", result
         return ("AVAILABLE" if result else "UNAVAILABLE"), result
 
+    @staticmethod
+    def collect_pressure():
+        from pathlib import Path
+        result = {}
+        for resource in ('cpu', 'memory', 'io'):
+            try:
+                line = next(x for x in Path('/proc/pressure/' + resource).read_text().splitlines() if x.startswith('some '))
+                fields = dict(x.split('=') for x in line.split()[1:])
+                result[resource + 'PsiAvg10'] = float(fields['avg10'])
+            except (OSError, ValueError, StopIteration, KeyError):
+                pass
+        try:
+            fields = dict(x.split() for x in Path('/proc/vmstat').read_text().splitlines())
+            result['oomKillCount'] = int(fields['oom_kill'])
+        except (OSError, ValueError, KeyError):
+            pass
+        try:
+            shm = psutil.disk_usage('/dev/shm')
+            result.update(shmTotalBytes=shm.total, shmUsedBytes=shm.used, shmPercent=shm.percent)
+        except (OSError, psutil.Error):
+            pass
+        return result
+
     def collect_system_info(self):
         system = platform.uname()
         memory, swap = psutil.virtual_memory(), psutil.swap_memory()
@@ -63,7 +86,7 @@ class SystemCollector:
             delta = getattr(current, field) - getattr(before, field)
             return round(delta / elapsed, 2) if delta >= 0 else None
 
-        networks = [{"name": name, "bytesReceived": item.bytes_recv, "bytesSent": item.bytes_sent,
+        networks = [{"name": name, "bytesReceived": item.bytes_recv, "bytesSent": item.bytes_sent, "errorsIn": getattr(item,"errin",None), "errorsOut": getattr(item,"errout",None), "dropsIn": getattr(item,"dropin",None), "dropsOut": getattr(item,"dropout",None),
                      "receiveBytesPerSecond": rate(item, previous[1].get(name) if previous else None, "bytes_recv"),
                      "sendBytesPerSecond": rate(item, previous[1].get(name) if previous else None, "bytes_sent")}
                     for name, item in list(net.items())[:256]]
@@ -82,7 +105,9 @@ class SystemCollector:
             disks.append({"device": partition.device, "mountpoint": partition.mountpoint, "fstype": partition.fstype,
                           "totalBytes": usage.total, "usedBytes": usage.used, "freeBytes": usage.free, "percent": usage.percent,
                           "readBytesPerSecond": rate(counter, old, "read_bytes") if counter else None,
-                          "writeBytesPerSecond": rate(counter, old, "write_bytes") if counter else None})
+                          "writeBytesPerSecond": rate(counter, old, "write_bytes") if counter else None,
+                          "readIops": rate(counter, old, "read_count") if counter and hasattr(counter,"read_count") else None, "writeIops": rate(counter, old, "write_count") if counter and hasattr(counter,"write_count") else None,
+                          "busyPercent": min(100, rate(counter, old, "busy_time") / 10) if counter and hasattr(counter,"busy_time") and rate(counter, old, "busy_time") is not None else None})
         self._previous = (now, net, io)
         try:
             load = os.getloadavg()
@@ -93,7 +118,7 @@ class SystemCollector:
                 "cpu": {"count": psutil.cpu_count(logical=True), "percent": round(sum(cores) / len(cores), 2) if cores else None},
                 "memory": {"total": memory.total, "used": memory.used},
                 "disk": {"total": disk.total, "used": disk.used, "percent": disk.percent},
-                "details": {"perCorePercent": cores, "load1": load[0], "load5": load[1], "load15": load[2],
+                "details": {**self.collect_pressure(), "perCorePercent": cores, "load1": load[0], "load5": load[1], "load15": load[2],
                             "memoryAvailableBytes": memory.available, "memoryCachedBytes": getattr(memory, "cached", None),
                             "swapTotalBytes": swap.total, "swapUsedBytes": swap.used, "swapPercent": swap.percent,
                             "disks": disks, "network": networks,

@@ -1,5 +1,4 @@
-"""Compatibility import for the original misspelled package path."""
+"""兼容历史调用方，不重复定义请求模型。"""
+from ..schemas.chat import ChatRequest
 
-from ..schemas.chat import ChatRequest, ChatResponse, HistoryMessage
-
-__all__ = ["ChatRequest", "ChatResponse", "HistoryMessage"]
+__all__ = ["ChatRequest"]

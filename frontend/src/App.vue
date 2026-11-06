@@ -187,7 +187,7 @@ watch(
             ><template #title>资源管理</template>
             <a-menu-item key="servers">服务器管理</a-menu-item
             ><a-menu-item key="gpu">GPU 监控与进程</a-menu-item
-            ><a-menu-item key="reservations">GPU 资源预约</a-menu-item>
+            ><a-menu-item key="training">训练任务协同</a-menu-item><a-menu-item key="reservations">GPU 资源预约</a-menu-item>
           </a-sub-menu>
           <a-sub-menu key="operations"
             ><template #icon><SafetyCertificateOutlined /></template

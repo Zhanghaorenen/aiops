@@ -60,6 +60,7 @@ export const router = createRouter({
         description: '设备指标、进程详情和独立历史趋势',
       },
     },
+    { path: '/training', component: () => import('../views/TrainingView.vue'), meta: { title: '训练任务协同', section: 'training' } },
     {
       path: '/reservations',
       component: () => import('../views/ResourceView.vue'),

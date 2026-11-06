@@ -61,9 +61,9 @@ public class GpuUsageService {
     if (window && rows.size() > 2000)
       throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "该时间段预约较多，请缩小查询范围");
     for (var row : rows) {
-      row.put("verification", "UNVERIFIED");
+      row.put("verification", "TRAINING".equals(row.get("reservation_kind")) ? "TRAINING_JOB" : "UNVERIFIED");
       row.put("reserves_gpu", false);
-      row.put("verification_note", "人工登记未与操作系统任务身份绑定，请结合 GPU 进程和采集时间核实");
+      row.put("verification_note", "TRAINING".equals(row.get("reservation_kind")) ? "训练任务的资源报告与进程身份请在训练任务中心查看" : "人工登记未与操作系统任务身份绑定，请结合 GPU 进程和采集时间核实");
     }
     return rows;
   }
@@ -86,6 +86,7 @@ public class GpuUsageService {
     if (!"PLANNED".equals(r.status()))
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "新增或编辑预约只能处于计划状态");
     if (id != null) {
+      rejectTrainingMutation(id);
       var old =
           jdbc
               .queryForList(
@@ -168,6 +169,7 @@ public class GpuUsageService {
     var node = access.requireNode(serverId, ClusterPermission.GPU_VIEW);
     jdbc.queryForMap("SELECT id FROM ops_node WHERE id=? FOR UPDATE", serverId);
     expire(serverId);
+    rejectTrainingMutation(id);
     var row =
         jdbc
             .queryForList(
@@ -201,6 +203,10 @@ public class GpuUsageService {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态不能回退，终态不可重新开始");
     jdbc.update(
         "UPDATE ops_gpu_usage SET status=?,updated_at=? WHERE id=?", next, utc(Instant.now()), id);
+  }
+
+  private void rejectTrainingMutation(Long id) {
+    if (jdbc.queryForObject("SELECT COUNT(*) FROM ops_training_job WHERE id=?", Long.class, id) > 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "训练任务请在训练任务中心管理");
   }
 
   private void expire(Long serverId) {

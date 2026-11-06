@@ -9,7 +9,7 @@ import tools.jackson.databind.ObjectMapper;
 public final class MetricDetails {
   private static final ObjectMapper JSON = new ObjectMapper();
   public static final String PROCESS =
-      "cpuPercent,memoryRssBytes,numThreads,startedAt,status,executablePath,workingDirectory";
+      "cpuPercent,memoryRssBytes,numThreads,startedAt,status,executablePath,workingDirectory,parentPid,readBytes,writeBytes,readBytesPerSecond,writeBytesPerSecond";
   public static final String GPU = "powerLimitW,memoryClockMhz";
 
   public static String encode(Map<String, Object> input, String kind) {
@@ -19,7 +19,7 @@ public final class MetricDetails {
       result =
           pick(
               input,
-              "load1,load5,load15,memoryAvailableBytes,memoryCachedBytes,swapTotalBytes,swapUsedBytes,swapPercent,temperatureStatus");
+              "load1,load5,load15,memoryAvailableBytes,memoryCachedBytes,swapTotalBytes,swapUsedBytes,swapPercent,temperatureStatus,cpuPsiAvg10,memoryPsiAvg10,ioPsiAvg10,oomKillCount,shmTotalBytes,shmUsedBytes,shmPercent");
       Object temperatureStatus = result.get("temperatureStatus");
       if (temperatureStatus != null && !Set.of("AVAILABLE", "UNSUPPORTED", "UNAVAILABLE").contains(temperatureStatus))
         throw bad();
@@ -31,6 +31,7 @@ public final class MetricDetails {
         if (!(sensor.get("category") instanceof String category) || !Set.of("CPU", "BOARD", "STORAGE", "OTHER").contains(category)) throw bad();
         if (!sensor.containsKey("currentCelsius")) throw bad();
       }
+      result.put("processExits", rows(input.get("processExits"), "pid,startedAt,observedAt,status"));
       Object cores = input.get("perCorePercent");
       if (cores instanceof List<?> list && list.size() <= 1024) {
         for (Object n : list) checkNumber(n, "perCorePercent");
@@ -40,13 +41,17 @@ public final class MetricDetails {
           "disks",
           rows(
               input.get("disks"),
-              "device,mountpoint,fstype,totalBytes,usedBytes,freeBytes,percent,readBytesPerSecond,writeBytesPerSecond"));
+              "device,mountpoint,fstype,totalBytes,usedBytes,freeBytes,percent,readBytesPerSecond,writeBytesPerSecond,readIops,writeIops,busyPercent"));
       result.put(
           "network",
           rows(
               input.get("network"),
-              "name,bytesReceived,bytesSent,receiveBytesPerSecond,sendBytesPerSecond"));
+              "name,bytesReceived,bytesSent,receiveBytesPerSecond,sendBytesPerSecond,errorsIn,errorsOut,dropsIn,dropsOut"));
     } else result = pick(input, kind.equals("GPU") ? GPU : PROCESS);
+    if (kind.equals("PROCESS")) {
+      result.put("processTree", rows(input.get("processTree"), "pid,parentPid,name,startedAt,memoryRssBytes"));
+      if(input.get("processTreeTruncated") instanceof Boolean truncated) result.put("processTreeTruncated",truncated);
+    }
     String value = JSON.writeValueAsString(result);
     if (value.length() > 65536) throw bad();
     return value;
@@ -77,6 +82,7 @@ public final class MetricDetails {
               "fstype",
               "name",
               "startedAt",
+              "observedAt",
               "status",
               "executablePath",
               "workingDirectory")

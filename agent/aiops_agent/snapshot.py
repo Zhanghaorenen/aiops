@@ -27,6 +27,9 @@ class HostSnapshot:
             gpu_status = "FAILED"
             errors.append(f"gpu: {exc}")
 
+        if system is not None:
+            system.setdefault("details", {})["processExits"] = self.gpu_collector.process_collector.collect_exits()
+
         return {
             "collected_at": datetime.now(timezone.utc).isoformat(),
             "system": system,

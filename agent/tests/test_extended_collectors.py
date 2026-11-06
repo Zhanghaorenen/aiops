@@ -49,6 +49,9 @@ class ExtendedCollectorTests(unittest.TestCase):
 
     def test_process_permissions_are_partial_and_cpu_needs_baseline(self):
         process=Mock(pid=123)
+        process.children.return_value=[]
+        process.ppid.return_value=1
+        process.io_counters.side_effect=psutil.AccessDenied(123)
         process.create_time.return_value=1700000000
         process.name.return_value='python'
         process.username.return_value='alice'

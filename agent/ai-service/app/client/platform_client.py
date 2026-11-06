@@ -232,3 +232,11 @@ class PlatformClient:
 
     async def close(self):
         await self.client.aclose()
+
+    async def get_training_jobs(self, server_id: int) -> list[dict]:
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/jobs", list)
+
+    async def get_training_analysis(self, server_id: int, job_id: int) -> dict:
+        if isinstance(job_id, bool) or not isinstance(job_id, int) or job_id <= 0:
+            raise ValueError("job_id must be positive")
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/jobs/{job_id}/analysis", dict)

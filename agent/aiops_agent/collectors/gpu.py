@@ -84,7 +84,7 @@ class GPUInfo:
                     record["name"] = detail.get("name")
                     record["username"] = detail.get("username")
 
-                    record["details"] = {key: detail.get(key) for key in ("cpuPercent","memoryRssBytes","numThreads","startedAt","status","executablePath","workingDirectory")}
+                    record["details"] = {key: detail.get(key) for key in ("cpuPercent","memoryRssBytes","numThreads","startedAt","status","executablePath","workingDirectory","parentPid","readBytes","writeBytes","readBytesPerSecond","writeBytesPerSecond","processTree","processTreeTruncated")}
                     record["task_type"] = (
                         self.process_collector.classify_task(detail)
                     )

@@ -16,6 +16,19 @@ const events = new EventTarget()
 const testToken = 'frontend-test-placeholder'
 const signedIn = () => ({ token: testToken, demo: false })
 
+test('training task creation is hidden for viewers and available for operators', async () => {
+  const View=(await vite.ssrLoadModule('/src/views/TrainingView.vue')).default
+  for(const role of ['VIEWER','OPERATOR']) {
+    const pinia=createPinia();setActivePinia(pinia)
+    const store=storeModule.useWorkspaceStore();store.role=role;store.demo=false;store.servers=[]
+    const app=createSSRApp(View).use(pinia)
+    const container={props:['title'],setup:(props,{slots})=>()=>h('section',[props.title,slots.default?.()])}
+    for(const name of ['a-space','a-card','a-select','a-alert','a-table','a-collapse','a-collapse-panel','a-form','a-form-item','a-input','a-input-number','a-textarea','a-button','a-checkbox'])app.component(name,container)
+    const html=await renderToString(app)
+    assert.equal(html.includes('登记训练任务'),role==='OPERATOR')
+  }
+})
+
 test('CPU temperature only uses CPU sensors and rejects unsupported or expired evidence', async () => {
   const {cpuTemperature,primaryTemperature,temperatureHint,freshSample}=await vite.ssrLoadModule('/src/utils/temperature.ts')
   const details={temperatureStatus:'AVAILABLE',temperatures:[{category:'STORAGE',currentCelsius:90},{category:'CPU',currentCelsius:61},{category:'CPU',currentCelsius:65}]}
