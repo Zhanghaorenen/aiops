@@ -28,3 +28,8 @@ erDiagram
 
 按功能启用：GPU/磁盘/网络采样、告警规则和事件、容器/日志、任务/审批/执行、模型服务/推理采样、AI 会话/消息/工具调用/诊断、知识库文档/分块、审计日志。大规模日志、向量和时序数据在确有容量需求后迁移专用存储。
 
+
+
+## v0.2 增量模型
+
+当前实现增量使用 V8–V11：V8 ops_cluster/ops_cluster_member 与 Node/Token 集群归属；V9 ops_action_audit 与 revoked_at；V10 ops_alert_rule/ops_alert_event；V11 Incident/关联告警/历史/调查租约/报告和 GPU 使用登记。历史 V1–V7 不改；CPU/GPU 仍以原采样表为事实来源，知识库仍私有。MEDIUMTEXT 报告可能包含私有 KB，只允许发起人读取。实际库升级前需备份和副本验证，详细结构以迁移及 v0.2 实现报告为准。

@@ -11,10 +11,24 @@ import com.aiops.backend.persistence.UtcInstantTypeHandler;
 
 @Repository
 public class NodeRepository extends MapperRepository<NodeEntity, NodeMapper> {
-    public NodeRepository(NodeMapper mapper) {
+    private final ClusterRepository clusters;
+    public NodeRepository(NodeMapper mapper, ClusterRepository clusters) {
         super(mapper, NodeEntity::getId);
+        this.clusters=clusters;
     }
 
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public NodeEntity save(NodeEntity node){
+        // Compatibility for the current single-cluster registration protocol. Stage 4 will bind from the token.
+        if(node.getId()==null && node.getClusterId()==null)node.assignCluster(clusters.requireDefault().getId());
+        return super.save(node);
+    }
+
+    public List<NodeEntity> findByClusterIds(List<Long> ids){
+        if(ids.isEmpty())return List.of();
+        return mapper.selectList(new QueryWrapper<NodeEntity>().in("cluster_id",ids).orderByAsc("id"));
+    }
     public List<NodeEntity> findAllByOrderByIdAsc() {
         return findAll();
     }

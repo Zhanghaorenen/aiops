@@ -49,7 +49,7 @@ public class AgentController {
 
     @PostMapping("/{id}/heartbeat")
     public AgentEntity heartbeat(@PathVariable Long id) {
-        return agentService.heartbeat(id);
+        return agentService.collectorHeartbeat(id);
     }
 
     @DeleteMapping("/{id}")

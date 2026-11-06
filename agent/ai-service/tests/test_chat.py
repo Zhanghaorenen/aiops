@@ -138,7 +138,7 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
     async def test_graph_exposes_gpu_health_and_read_only_placement_tools(self):
         gpu_snapshot = {
             "serverId": 41, "collectionStatus": "AVAILABLE",
-            "collectedAt": "2026-10-27T00:00:00Z", "receivedAt": "2026-10-27T00:00:01Z",
+            "collectedAt": __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(), "receivedAt": "2026-10-27T00:00:01Z",
             "gpuCount": 1, "gpuIndices": [0], "gpuUuids": ["GPU-test-uuid"],
             "gpuNames": ["Test GPU"], "gpuMemoryTotal": [10000],
             "gpuMemoryUsed": [2000], "gpuMemoryFree": [8000],
@@ -167,8 +167,9 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(output["ok"])
         self.assertEqual(output["data"]["status"], "recommended")
         self.assertFalse(output["data"]["execution_performed"])
-        self.assertEqual([request.url.path for request in self.backend_requests],
-                         ["/api/auth/me", "/api/servers/41/gpus"])
+        self.assertCountEqual([request.url.path for request in self.backend_requests],
+                              ["/api/auth/me", "/api/servers/41/gpus",
+                               "/api/servers/41/gpus/processes", "/api/servers/41/gpus/0/history"])
 
     async def test_missing_and_invalid_jwt_never_call_model(self):
         async with self.build(settings=replace(CONFIG, llm_model="")) as client:
@@ -274,7 +275,7 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         def backend(request):
             requests.append(request)
             if request.url.path == "/api/servers/41/gpus":
-                return httpx.Response(200, json={"serverId": 41, "collectionStatus": "NO_GPU", "gpuUuids": []})
+                return httpx.Response(200, json={"serverId": 41, "collectionStatus": "NO_GPU", "collectedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(), "gpuUuids": []})
             if request.url.path == "/api/servers/41/gpus/0/history":
                 return httpx.Response(200, json=[])
             return httpx.Response(404)

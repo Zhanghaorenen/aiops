@@ -1,0 +1,512 @@
+[
+  {
+    "id": "memory-01",
+    "question": "现在两张 GPU 哪张空闲显存更多？",
+    "expected_tools_any": [
+      "get_gpu_overview",
+      "list_gpus",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "memory-02",
+    "question": "给需要较大显存的新任务提供建议",
+    "expected_tools_any": [
+      "get_gpu_overview",
+      "list_gpus",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "memory-03",
+    "question": "对比 GPU 0 和 GPU 1 的显存占用",
+    "expected_tools_any": [
+      "get_gpu_overview",
+      "list_gpus",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "memory-04",
+    "question": "当前哪张卡更适合显存密集任务？",
+    "expected_tools_any": [
+      "get_gpu_overview",
+      "list_gpus",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "memory-05",
+    "question": "两张 GPU 当前总显存和空闲显存分别多少？",
+    "expected_tools_any": [
+      "get_gpu_overview",
+      "list_gpus",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "utilization-06",
+    "question": "哪张 GPU 当前利用率更低？",
+    "expected_tools_any": [
+      "list_gpus",
+      "compare_gpu_load",
+      "get_gpu_overview",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "utilization-07",
+    "question": "比较两张卡当前负载",
+    "expected_tools_any": [
+      "list_gpus",
+      "compare_gpu_load",
+      "get_gpu_overview",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "utilization-08",
+    "question": "GPU 是否存在明显负载不均衡？",
+    "expected_tools_any": [
+      "list_gpus",
+      "compare_gpu_load",
+      "get_gpu_overview",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "utilization-09",
+    "question": "推荐较空闲 GPU 并说明依据时间",
+    "expected_tools_any": [
+      "list_gpus",
+      "compare_gpu_load",
+      "get_gpu_overview",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "utilization-10",
+    "question": "哪张卡计算忙但显存占用低？",
+    "expected_tools_any": [
+      "list_gpus",
+      "compare_gpu_load",
+      "get_gpu_overview",
+      "recommend_gpu_placement"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "process-11",
+    "question": "GPU 0 运行了哪些进程？",
+    "expected_tools_any": [
+      "get_gpu_processes"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "process-12",
+    "question": "列出整台服务器的 GPU 进程",
+    "expected_tools_any": [
+      "get_gpu_processes"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "process-13",
+    "question": "GPU 1 的显存主要由哪些进程占用？",
+    "expected_tools_any": [
+      "get_gpu_processes"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "process-14",
+    "question": "GPU 0 和 GPU 1 的进程是否能正确对应？",
+    "expected_tools_any": [
+      "get_gpu_processes"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "process-15",
+    "question": "能否看到 GPU 上的进程 PID 和进程名？",
+    "expected_tools_any": [
+      "get_gpu_processes"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "oom-16",
+    "question": "GPU 显存充足但 CUDA OOM 应检查什么？",
+    "expected_tools_any": [
+      "search_knowledge"
+    ],
+    "requires_document_source": true,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "oom-17",
+    "question": "CUDA OOM 是否一定意味着显卡硬件故障？",
+    "expected_tools_any": [
+      "search_knowledge"
+    ],
+    "requires_document_source": true,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "oom-18",
+    "question": "当前显存指标与手册能否支持 OOM 排查建议？",
+    "expected_tools_any": [
+      "search_knowledge"
+    ],
+    "requires_document_source": true,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "oom-19",
+    "question": "结合 GPU 进程和手册排查训练 OOM",
+    "expected_tools_any": [
+      "search_knowledge"
+    ],
+    "requires_document_source": true,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "oom-20",
+    "question": "批大小很小仍然 OOM，给出有来源的排查步骤",
+    "expected_tools_any": [
+      "search_knowledge"
+    ],
+    "requires_document_source": true,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "temperature-21",
+    "question": "GPU 温度持续偏高应如何排查？",
+    "expected_tools_any": [
+      "analyze_gpu_health",
+      "list_gpus",
+      "get_gpu_status",
+      "search_knowledge"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "temperature-22",
+    "question": "GPU 0 当前温度是否异常？",
+    "expected_tools_any": [
+      "analyze_gpu_health",
+      "list_gpus",
+      "get_gpu_status",
+      "search_knowledge"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "temperature-23",
+    "question": "结合温度和运维手册分析散热问题",
+    "expected_tools_any": [
+      "analyze_gpu_health",
+      "list_gpus",
+      "get_gpu_status",
+      "search_knowledge"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "temperature-24",
+    "question": "两张卡温差很大可能有哪些原因？",
+    "expected_tools_any": [
+      "analyze_gpu_health",
+      "list_gpus",
+      "get_gpu_status",
+      "search_knowledge"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "temperature-25",
+    "question": "请给出高温排查步骤并标注来源",
+    "expected_tools_any": [
+      "analyze_gpu_health",
+      "list_gpus",
+      "get_gpu_status",
+      "search_knowledge"
+    ],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "insufficient-26",
+    "question": "Agent 离线时还能把旧显存值当成当前值吗？",
+    "expected_tools_any": [],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "insufficient-27",
+    "question": "采集失败能否判定服务器没有 GPU？",
+    "expected_tools_any": [],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "insufficient-28",
+    "question": "指标缺测时是否可以把温度记为零？",
+    "expected_tools_any": [],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "insufficient-29",
+    "question": "没有相关手册时能否提供确定根因？",
+    "expected_tools_any": [],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  },
+  {
+    "id": "insufficient-30",
+    "question": "这些建议执行了吗，是否真的预留了 GPU？",
+    "expected_tools_any": [],
+    "requires_document_source": false,
+    "reference_facts": "以本次查询的服务器采样及实际检索片段为准，不预填监控数值",
+    "expected_source": "有权限的 KB 文档 / 当前服务器监控 API",
+    "human_review": [
+      "采样时间及新鲜度是否准确",
+      "是否编造数值或来源",
+      "不足证据是否明确说明",
+      "是否错误声称执行或预留资源"
+    ]
+  }
+]

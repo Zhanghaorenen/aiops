@@ -16,6 +16,11 @@ import com.aiops.backend.service.MetricService;
 @Service
 @Transactional
 public class MetricServiceImpl implements MetricService {
+    @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.service.ClusterPermissionService access;
+    @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.repository.ClusterRepository clusters;
+    private void legacyRead(){access.require(clusters.requireDefault().getId(),com.aiops.backend.security.ClusterPermission.AGENT_MANAGE);}
+    private void legacyWrite(){legacyRead();}
+
 
     private static final int MAX_RECENT_LIMIT = 200;
 
@@ -29,6 +34,7 @@ public class MetricServiceImpl implements MetricService {
 
     @Override
     public MetricEntity recordMetric(MetricEntity metric) {
+        legacyWrite();
         AgentEntity agent = agentService.getAgentById(requireAgentId(metric.getAgentId()));
         Instant now = Instant.now();
 
@@ -51,6 +57,7 @@ public class MetricServiceImpl implements MetricService {
     @Override
     @Transactional(readOnly = true)
     public List<MetricEntity> listRecentMetrics(int limit) {
+        legacyRead();
         int pageSize = Math.min(Math.max(limit, 1), MAX_RECENT_LIMIT);
         return metricRepository.findAllByOrderByCollectedAtDescIdDesc(pageSize);
     }
@@ -58,6 +65,7 @@ public class MetricServiceImpl implements MetricService {
     @Override
     @Transactional(readOnly = true)
     public MetricEntity getLatestMetricByAgentId(Long agentId) {
+        legacyRead();
         return metricRepository.findTopByAgentIdOrderByCollectedAtDescIdDesc(requireAgentId(agentId))
                 .orElseThrow(() -> new ResourceNotFoundException("Metric not found for agent: " + agentId));
     }
@@ -65,6 +73,7 @@ public class MetricServiceImpl implements MetricService {
     @Override
     @Transactional(readOnly = true)
     public List<MetricEntity> getMetricHistoryByAgentId(Long agentId) {
+        legacyRead();
         agentService.getAgentById(requireAgentId(agentId));
         return metricRepository.findAllByAgentIdOrderByCollectedAtDescIdDesc(
                 agentId, MAX_RECENT_LIMIT);
@@ -73,6 +82,7 @@ public class MetricServiceImpl implements MetricService {
     @Override
     @Transactional(readOnly = true)
     public AgentDetails getAgentDetails(Long agentId) {
+        legacyRead();
         AgentEntity agent = agentService.getAgentById(requireAgentId(agentId));
         return new AgentDetails(agent, metricRepository
                 .findTopByAgentIdOrderByCollectedAtDescIdDesc(agentId).orElse(null));
@@ -81,6 +91,7 @@ public class MetricServiceImpl implements MetricService {
     @Override
     @Transactional(readOnly = true)
     public AgentOverview getAgentOverview(Long agentId) {
+        legacyRead();
         AgentDetails details = getAgentDetails(agentId);
         return new AgentOverview(details.agent().getId(), details.agent().getHostname(),
                 details.agent().getStatus(), details.latestMetric());

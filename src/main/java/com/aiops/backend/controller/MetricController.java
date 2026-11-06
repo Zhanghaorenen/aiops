@@ -29,7 +29,7 @@ public class MetricController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public MetricEntity recordMetric(@RequestBody MetricEntity metric) {
-        return metricService.recordMetric(metric);
+        return metricService.recordCollectorMetric(metric);
     }
 
     @GetMapping("/recent")

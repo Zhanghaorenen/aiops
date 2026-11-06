@@ -6,6 +6,7 @@ import { CopyOutlined, KeyOutlined } from '@ant-design/icons-vue'
 import { errorMessage } from '../api'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatTime } from '../utils/format'
+import AgentAdministration from '../components/AgentAdministration.vue'
 
 const store = useWorkspaceStore()
 const router = useRouter()
@@ -30,7 +31,7 @@ async function copy(value: string) {
   catch { message.error('复制失败，请手动选择文本复制') }
 }
 async function createToken() {
-  if (store.demo || busy.value) return
+  if (store.demo || busy.value || store.role!=='ADMIN') return
   confirm.value = false
   busy.value = true
   try { await store.issueEnrollmentToken(); message.success('已签发注册令牌') }
@@ -42,7 +43,7 @@ const columns = [{ title: '已接入节点', key: 'name' }, { title: '状态', k
 
 <template>
   <a-alert v-if="store.demo" type="warning" show-icon class="error-banner" message="签发令牌需要登录真实环境。下方可预览接入步骤与命令。" />
-  <section class="access-step"><div class="step-marker">01</div><div class="step-body"><h2>签发注册令牌</h2><p class="muted">每台服务器使用一个令牌，有效期 30 分钟，成功注册后即失效。</p><a-button type="primary" :loading="busy" :disabled="store.demo" @click="store.enrollment ? confirm = true : createToken()"><template #icon><KeyOutlined /></template>{{ store.enrollment ? '签发新令牌' : '生成注册令牌' }}</a-button>
+  <section class="access-step"><div class="step-marker">01</div><div class="step-body"><h2>签发注册令牌</h2><p class="muted">每台服务器使用一个令牌，有效期 30 分钟，成功注册后即失效。</p><a-button type="primary" :loading="busy" :disabled="store.demo||store.role!=='ADMIN'" @click="store.enrollment ? confirm = true : createToken()"><template #icon><KeyOutlined /></template>{{ store.enrollment ? '签发新令牌' : '生成注册令牌' }}</a-button>
     <div v-if="store.enrollment" class="token-block"><a-textarea :value="store.enrollment.token" readonly auto-size aria-label="注册令牌" /><a-space wrap><a-button @click="copy(store.enrollment.token)"><template #icon><CopyOutlined /></template>复制令牌</a-button><a-tag :color="expired ? 'error' : 'success'">{{ expired ? '已过期' : '已签发' }}</a-tag><span class="muted compact">过期时间 {{ formatTime(store.enrollment.expiresAt) }}</span></a-space></div>
   </div></section>
   <section class="access-step"><div class="step-marker">02</div><div class="step-body"><h2>在目标服务器启动 Agent</h2><div class="command-toolbar"><a-segmented v-model:value="os" :options="['Windows', 'Linux / macOS']" /><a-tooltip title="复制启动命令"><a-button aria-label="复制启动命令" @click="copy(command)"><template #icon><CopyOutlined /></template></a-button></a-tooltip></div><a-form layout="vertical"><a-form-item label="后端地址"><a-input v-model:value="backend" placeholder="http://服务器IP:8080" /></a-form-item></a-form><pre class="command-block">{{ command }}</pre><p class="muted compact">从项目根目录执行。目标主机需要 Python 3.10+，且能够访问上方后端地址。</p></div></section>
@@ -50,5 +51,6 @@ const columns = [{ title: '已接入节点', key: 'name' }, { title: '状态', k
     <a-table v-if="store.servers.length" row-key="id" size="small" :columns="columns" :data-source="store.servers" :scroll="{ x: 450 }" :pagination="{ pageSize: 5, hideOnSinglePage: true }"><template #bodyCell="{ column, record }"><a-button v-if="column.key === 'name'" type="link" @click="router.push(`/servers/${record.id}`)">{{ record.name }}</a-button><a-tag v-else-if="column.key === 'status'" :color="record.status === 'ONLINE' ? 'success' : 'default'">{{ record.status === 'ONLINE' ? '在线' : '离线' }}</a-tag><span v-else>{{ formatTime(record.lastSeenAt) }}</span></template></a-table>
     <a-empty v-else :image="Empty.PRESENTED_IMAGE_SIMPLE" description="等待第一个 Agent 上线" />
   </div></section>
+  <AgentAdministration v-if="!store.demo && store.role==='ADMIN'" />
   <a-modal v-model:open="confirm" title="签发新的注册令牌？" ok-text="签发新令牌" cancel-text="取消" @ok="createToken">当前令牌将不再显示，请确认已经保存。已签发的令牌在过期或被使用前仍然有效。</a-modal>
 </template>

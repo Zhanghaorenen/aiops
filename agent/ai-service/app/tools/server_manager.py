@@ -1,6 +1,7 @@
 """Map platform DTOs to read-only tool results without collecting local metrics."""
 
 from ..client.platform_client import PlatformClient
+from .gpu_manager import GPUManager
 
 
 class ServerManager:
@@ -19,6 +20,7 @@ class ServerManager:
             "server_id": server_id,
             "collected_at": sample.get("collectedAt"),
             "received_at": sample.get("receivedAt"),
+            "freshness": GPUManager._freshness(sample.get("collectedAt")),
             "cpu": {"percent": sample.get("cpuPercent")},
             "memory": {"total_bytes": sample.get("memoryTotalBytes"), "used_bytes": sample.get("memoryUsedBytes"), "percent": sample.get("memoryPercent")},
             "disk": {"total_bytes": sample.get("diskTotalBytes"), "used_bytes": sample.get("diskUsedBytes"), "percent": sample.get("diskPercent")},

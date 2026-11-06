@@ -473,3 +473,32 @@ test('RAG sources are deduplicated and kept with the answer, without being sent 
   const next=chat.createChatRequest('继续',session.messages.value)
   assert.equal('sources' in next.history[1],false)
 })
+
+
+test('SSE 401 clears the login identity even after HTTP streaming headers were sent', async () => {
+  storage.set('aiops.accessToken', testToken)
+  const originalFetch=globalThis.fetch
+  let unauthorized=0
+  const listener=()=>unauthorized++
+  events.addEventListener('aiops:unauthorized',listener)
+  globalThis.fetch=async()=>new Response('data: '+JSON.stringify({type:'error',status:401,message:'凭据已过期'})+'\n\n',{status:200,headers:{'Content-Type':'text/event-stream'}})
+  try {
+    await assert.rejects(apiModule.sendChatStream({question:'test',history:[]}),/凭据已过期/)
+    assert.equal(storage.has('aiops.accessToken'),false)
+    assert.equal(unauthorized,1)
+  } finally {globalThis.fetch=originalFetch;events.removeEventListener('aiops:unauthorized',listener)}
+})
+
+test('workspace management controls are rendered only for an ADMIN', async () => {
+  const WorkspaceView=(await vite.ssrLoadModule('/src/views/WorkspaceView.vue')).default
+  for(const role of ['VIEWER','OPERATOR','ADMIN']) {
+    const pinia=createPinia();setActivePinia(pinia)
+    storeModule.useWorkspaceStore().role=role
+    const app=createSSRApp(WorkspaceView).use(pinia)
+    const container={setup:(_,{slots})=>()=>h('div',slots.default?.())}
+    for(const name of ['a-space','a-card','a-table','a-alert','a-select','a-button','a-popconfirm','a-tag'])app.component(name,container)
+    app.component('a-input',{render:()=>h('input',{'data-member-editor':'true'})})
+    const html=await renderToString(app)
+    assert.equal(html.includes('data-member-editor'),role==='ADMIN')
+  }
+})

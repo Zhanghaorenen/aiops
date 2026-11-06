@@ -16,11 +16,21 @@ public class AgentEnrollTokenEntity {
     @TableField(value = "expires_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant expiresAt;
     @TableField(value = "used_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class, updateStrategy = FieldStrategy.ALWAYS) private Instant usedAt;
     @TableField(value = "created_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class, updateStrategy = FieldStrategy.NEVER) private Instant createdAt;
+    @TableField(value="cluster_id",updateStrategy=FieldStrategy.NEVER) private Long clusterId;
+    @TableField(value="issued_by_user_id",updateStrategy=FieldStrategy.NEVER) private Long issuedByUserId;
+    public Long getClusterId(){return clusterId;}
+    public Long getIssuedByUserId(){return issuedByUserId;}
+    public AgentEnrollTokenEntity(String hash,Instant expiresAt,Instant createdAt,Long clusterId,Long issuedByUserId){this(hash,expiresAt,createdAt);this.clusterId=clusterId;this.issuedByUserId=issuedByUserId;}
     protected AgentEnrollTokenEntity() {}
     public AgentEnrollTokenEntity(String tokenHash, Instant expiresAt, Instant createdAt) {
         this.tokenHash = tokenHash; this.expiresAt = expiresAt; this.createdAt = createdAt;
     }
-    public boolean isUsableAt(Instant now) { return usedAt == null && expiresAt.isAfter(now); }
+    @TableField(value="revoked_at",jdbcType=JdbcType.TIMESTAMP,typeHandler=UtcInstantTypeHandler.class,updateStrategy=FieldStrategy.ALWAYS) private Instant revokedAt;
+    public Instant getExpiresAt(){return expiresAt;}
+    public Instant getUsedAt(){return usedAt;}
+    public Instant getRevokedAt(){return revokedAt;}
+    public void revoke(Instant now){revokedAt=now;}
+    public boolean isUsableAt(Instant now) { return revokedAt==null && usedAt == null && expiresAt.isAfter(now); }
     public void markUsed(Instant now) { this.usedAt = now; }
     public Long getId() { return id; }
 }

@@ -1,10 +1,10 @@
-
-
 from __future__ import annotations
 
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta, timezone
 import math
 from typing import TYPE_CHECKING
+import httpx
 
 if TYPE_CHECKING:
     from ..client.platform_client import PlatformClient
@@ -22,8 +22,11 @@ class GPUManager:
     def __init__(self, platform_client: PlatformClient):
         self.client = platform_client
 
-
     async def list_gpus(self, server_id: int) -> list[dict]:
+        _, gpus = await self._read_gpus(server_id)
+        return gpus
+
+    async def _read_gpus(self, server_id: int):
         """沿用平台并行数组结构；缺测保留 None，不采集本机 GPU。"""
         self._validate_ids(server_id)
         info = await self._call("get_server_gpus", server_id)
@@ -32,14 +35,21 @@ class GPUManager:
         if info.get("serverId", server_id) != server_id:
             raise ValueError("GPU 数据不属于指定服务器")
         fields = {
-            "gpu_name": "gpuNames", "gpu_memory_total": "gpuMemoryTotal",
-            "gpu_memory_used": "gpuMemoryUsed", "gpu_memory_free": "gpuMemoryFree",
-            "utilization": "utilization", "memory_utilization": "memoryUtilization",
-            "temperature": "temperature", "power_usage": "powerUsage",
-            "fan_speed": "fanSpeed", "clock_speed": "clockSpeed",
+            "gpu_name": "gpuNames",
+            "gpu_memory_total": "gpuMemoryTotal",
+            "gpu_memory_used": "gpuMemoryUsed",
+            "gpu_memory_free": "gpuMemoryFree",
+            "utilization": "utilization",
+            "memory_utilization": "memoryUtilization",
+            "temperature": "temperature",
+            "power_usage": "powerUsage",
+            "fan_speed": "fanSpeed",
+            "clock_speed": "clockSpeed",
         }
         uuids = info["gpuUuids"]
         collection_status = info.get("collectionStatus")
+        if not uuids and self._freshness(info.get("collectedAt")) != "FRESH":
+            raise GPUCollectionError("STALE")
         if not uuids and collection_status != "NO_GPU":
             raise GPUCollectionError(collection_status or "UNKNOWN")
         if uuids and collection_status not in (None, "AVAILABLE"):
@@ -49,28 +59,54 @@ class GPUManager:
         if len(set(uuids)) != len(uuids):
             raise ValueError("GPU UUID 不能重复")
         for source in fields.values():
-            if source in info and (not isinstance(info[source], list) or len(info[source]) != len(uuids)):
+            if source in info and (
+                not isinstance(info[source], list) or len(info[source]) != len(uuids)
+            ):
                 raise ValueError(f"{source} 与 gpuUuids 长度不一致")
+        indices = info.get("gpuIndices", [] if not uuids else None)
+        if (
+            not isinstance(indices, list)
+            or len(indices) != len(uuids)
+            or any(type(i) is not int or i < 0 for i in indices)
+            or len(set(indices)) != len(indices)
+        ):
+            raise ValueError("平台必须返回与 UUID 对应且不重复的 gpuIndices")
         result = []
         for index, uuid in enumerate(uuids):
-            gpu = {"server_id": server_id, "gpu_index": index, "gpu_uuid": uuid,
-                   "collected_at": info.get("collectedAt"), "received_at": info.get("receivedAt")}
+            gpu = {
+                "server_id": server_id,
+                "gpu_index": indices[index],
+                "gpu_uuid": uuid,
+                "collected_at": info.get("collectedAt"),
+                "received_at": info.get("receivedAt"),
+                "freshness": self._freshness(info.get("collectedAt")),
+            }
             for field, source in fields.items():
                 value = info[source][index] if source in info else None
                 if field != "gpu_name" and value is not None:
-                    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                    if (
+                        isinstance(value, bool)
+                        or not isinstance(value, (int, float))
+                        or not math.isfinite(value)
+                        or value < 0
+                    ):
                         raise ValueError(f"GPU 指标 {field} 必须为非负有限数值")
-                    if field in {"utilization", "memory_utilization", "fan_speed"} and value > 100:
+                    if (
+                        field in {"utilization", "memory_utilization", "fan_speed"}
+                        and value > 100
+                    ):
                         raise ValueError(f"GPU 指标 {field} 必须在 0 至 100 之间")
                 gpu[field] = value
             total = gpu["gpu_memory_total"]
-            if total is not None and any(value is not None and value > total for value in (
-                    gpu["gpu_memory_used"], gpu["gpu_memory_free"])):
+            if total is not None and any(
+                value is not None and value > total
+                for value in (gpu["gpu_memory_used"], gpu["gpu_memory_free"])
+            ):
                 raise ValueError("GPU 已用或空闲显存不能大于总显存")
             gpu["memeory_utilization"] = gpu["memory_utilization"]  # 兼容原拼写
             result.append(gpu)
-        return result
-        
+        return info, result
+
     async def get_gpu_status(self, server_id: int, gpu_id: int) -> dict:
         self._validate_ids(server_id, gpu_id)
         gpu = dict(self._select(await self.list_gpus(server_id), gpu_id))
@@ -79,61 +115,97 @@ class GPUManager:
         return gpu
 
     async def get_gpu_overview(self, server_id: int) -> dict:
-        gpus = await self.list_gpus(server_id)
+        info, gpus = await self._read_gpus(server_id)
         total = self._total([gpu["gpu_memory_total"] for gpu in gpus])
         used = self._total([gpu["gpu_memory_used"] for gpu in gpus])
         return {
             "server_id": server_id,
-            "status": "ok" if gpus else "no_gpu",
+            "status": ("ok" if gpus else "no_gpu")
+            if self._freshness(info.get("collectedAt")) == "FRESH"
+            else "stale",
+            "collected_at": info.get("collectedAt"),
+            "freshness": self._freshness(info.get("collectedAt")),
             "gpu_count": len(gpus),
-            "average_gpu_utilization": self._average([gpu["utilization"] for gpu in gpus]),
-            "total_gpu_memory_utilization": self._average([gpu["memory_utilization"] for gpu in gpus]),
-            "total_gpu_memory": total, "used_gpu_memory": used,
+            "average_gpu_utilization": self._average(
+                [gpu["utilization"] for gpu in gpus]
+            ),
+            "total_gpu_memory_utilization": self._average(
+                [gpu["memory_utilization"] for gpu in gpus]
+            ),
+            "total_gpu_memory": total,
+            "used_gpu_memory": used,
             "free_gpu_memory": self._total([gpu["gpu_memory_free"] for gpu in gpus]),
-            "memory_usage_percent": round(used / total * 100, 2) if total and used is not None else None,
+            "memory_usage_percent": round(used / total * 100, 2)
+            if total and used is not None
+            else None,
             "gpus": gpus,
         }
 
-    async def get_gpu_processes(self, server_id: int, gpu_id: int) -> list[dict]:
+    async def get_gpu_processes(
+        self, server_id: int, gpu_id: int | None = None
+    ) -> list[dict]:
         """只返回必要进程字段，不传播命令行或环境变量。"""
         self._validate_ids(server_id, gpu_id)
-        self._select(await self.list_gpus(server_id), gpu_id)
-        info = await self._call("get_gpu_process", server_id, gpu_id)
-        if not isinstance(info, list) or any(not isinstance(process, dict) for process in info):
+        if gpu_id is not None:
+            self._select(await self.list_gpus(server_id), gpu_id)
+        # 整机只查询一次，再按真实 gpuIndex 筛选，不逐卡重复调用同一后端接口。
+        info = await self._call("get_gpu_processes", server_id)
+        if not isinstance(info, list) or any(
+            not isinstance(process, dict) for process in info
+        ):
             raise ValueError("GPU 进程响应必须为对象列表")
         gpu_process_info = []
         for process in info:
-            if process.get("gpuIndex", gpu_id) != gpu_id:
-                raise ValueError("进程不属于指定 GPU")
-            gpu_process_info.append({
-                "pid": process.get("pid"),
-                "process_name": process.get("processName"),
-                "username": process.get("username"),
-                "gpu_memory_usage": process.get("gpuMemoryUsage"),
-                "task_type": process.get("taskType"),
-                "gpu_index": gpu_id,
-            })
+            index = process.get("gpuIndex")
+            if type(index) is not int or index < 0:
+                raise ValueError("进程缺少有效 gpuIndex")
+            if gpu_id is not None and index != gpu_id:
+                continue
+            gpu_process_info.append(
+                {
+                    "pid": process.get("pid"),
+                    "process_name": process.get("processName"),
+                    "username": process.get("username"),
+                    "gpu_memory_usage": process.get("gpuMemoryUsage"),
+                    "task_type": process.get("taskType"),
+                    "gpu_index": index,
+                    "collected_at": process.get("collectedAt"),
+                    "freshness": self._freshness(process.get("collectedAt")),
+                }
+            )
 
         return gpu_process_info
 
-    async def get_gpu_history(self, server_id: int, gpu_id: int, start_time: str, end_time: str):
+    async def get_gpu_history(
+        self, server_id: int, gpu_id: int, start_time: str, end_time: str
+    ):
         """委托平台历史接口，保留原始采样指标并按时间升序返回。"""
         self._validate_ids(server_id, gpu_id)
         start, end = self._time(start_time), self._time(end_time)
         if start > end:
             raise ValueError("开始时间不能晚于结束时间")
-        history = await self._call("get_gpu_history", server_id, gpu_id, start_time, end_time)
-        if not isinstance(history, list) or any(not isinstance(row, dict) for row in history):
+        history = await self._call(
+            "get_gpu_history", server_id, gpu_id, start_time, end_time
+        )
+        if not isinstance(history, list) or any(
+            not isinstance(row, dict) for row in history
+        ):
             raise ValueError("GPU 历史响应必须为对象列表")
         result = []
         for row in history:
-            if row.get("serverId", server_id) != server_id or row.get("gpuIndex", gpu_id) != gpu_id:
+            if (
+                row.get("serverId", server_id) != server_id
+                or row.get("gpuIndex", gpu_id) != gpu_id
+            ):
                 raise ValueError("历史数据不属于指定服务器或 GPU")
             timestamp = self._time(row.get("collectedAt", row.get("collected_at")))
             if not start <= timestamp <= end:
                 raise ValueError("GPU 历史记录不在查询时间范围内")
             result.append(dict(row))
-        return sorted(result, key=lambda row: self._time(row.get("collectedAt", row.get("collected_at"))))
+        return sorted(
+            result,
+            key=lambda row: self._time(row.get("collectedAt", row.get("collected_at"))),
+        )
 
     async def get_gpu_process(self, server_id: int, gpu_id: int) -> list[dict]:
         """保留已有的单数接口。"""
@@ -149,41 +221,87 @@ class GPUManager:
         memory = used / total * 100 if total and used is not None else None
         alerts, missing = [], []
         for metric, value, warning, critical in (
-                ("temperature", gpu["temperature"], 85, 95),
-                ("memory_usage_percent", memory, 90, 98)):
+            ("temperature", gpu["temperature"], 85, 95),
+            ("memory_usage_percent", memory, 90, 98),
+        ):
             if value is None:
                 missing.append(metric)
             elif value >= warning:
-                alerts.append({"metric": metric, "value": value,
-                               "level": "critical" if value >= critical else "warning",
-                               "threshold": critical if value >= critical else warning})
-        status = "critical" if any(item["level"] == "critical" for item in alerts) else (
-            "warning" if alerts else "unknown" if missing else "normal")
-        return {"server_id": server_id, "gpu_index": gpu_id, "gpu_uuid": gpu["gpu_uuid"],
-                "status": status, "analysis_type": "snapshot_rules", "alerts": alerts,
-                "missing_metrics": missing, "memory_usage_percent": memory, "evidence": gpu}
+                alerts.append(
+                    {
+                        "metric": metric,
+                        "value": value,
+                        "level": "critical" if value >= critical else "warning",
+                        "threshold": critical if value >= critical else warning,
+                    }
+                )
+        status = (
+            "critical"
+            if any(item["level"] == "critical" for item in alerts)
+            else ("warning" if alerts else "unknown" if missing else "normal")
+        )
+        return {
+            "server_id": server_id,
+            "gpu_index": gpu_id,
+            "gpu_uuid": gpu["gpu_uuid"],
+            "status": "stale" if gpu.get("freshness") != "FRESH" else status,
+            "analysis_type": "snapshot_rules",
+            "alerts": alerts,
+            "missing_metrics": missing,
+            "memory_usage_percent": memory,
+            "evidence": gpu,
+        }
 
     async def compare_gpu_load(self, server_id: int) -> dict:
         """比较同一快照全部显卡，利用率相差至少 30 个百分点时提示不均衡。"""
         gpus = await self.list_gpus(server_id)
-        ranked = sorted((gpu for gpu in gpus if gpu["utilization"] is not None),
-                        key=lambda gpu: gpu["utilization"])
-        spread = ranked[-1]["utilization"] - ranked[0]["utilization"] if ranked else None
-        status = ("no_gpu" if not gpus else "insufficient_data" if len(ranked) != len(gpus) else
-                  "single_gpu" if len(gpus) == 1 else "imbalanced" if spread >= 30 else "balanced")
-        return {"server_id": server_id, "gpu_count": len(gpus), "status": status,
-                "average_gpu_utilization": self._average([gpu["utilization"] for gpu in gpus]),
-                "utilization_spread": spread, "imbalance_threshold": 30,
-                "least_loaded_gpu": ranked[0] if ranked else None,
-                "most_loaded_gpu": ranked[-1] if ranked else None,
-                "missing_gpu_indices": [gpu["gpu_index"] for gpu in gpus if gpu["utilization"] is None],
-                "suggestions": ["可评估将新任务分配到较空闲 GPU，结合显存容量和任务约束决定。"]
-                if status == "imbalanced" else [], "gpus": gpus}
+        ranked = sorted(
+            (gpu for gpu in gpus if gpu["utilization"] is not None),
+            key=lambda gpu: gpu["utilization"],
+        )
+        spread = (
+            ranked[-1]["utilization"] - ranked[0]["utilization"] if ranked else None
+        )
+        status = (
+            "no_gpu"
+            if not gpus
+            else "insufficient_data"
+            if len(ranked) != len(gpus)
+            else "single_gpu"
+            if len(gpus) == 1
+            else "imbalanced"
+            if spread >= 30
+            else "balanced"
+        )
+        return {
+            "server_id": server_id,
+            "gpu_count": len(gpus),
+            "status": "stale"
+            if any(g.get("freshness") != "FRESH" for g in gpus)
+            else status,
+            "average_gpu_utilization": self._average(
+                [gpu["utilization"] for gpu in gpus]
+            ),
+            "utilization_spread": spread,
+            "imbalance_threshold": 30,
+            "least_loaded_gpu": ranked[0] if ranked else None,
+            "most_loaded_gpu": ranked[-1] if ranked else None,
+            "missing_gpu_indices": [
+                gpu["gpu_index"] for gpu in gpus if gpu["utilization"] is None
+            ],
+            "suggestions": [
+                "可评估将新任务分配到较空闲 GPU，结合显存容量和任务约束决定。"
+            ]
+            if status == "imbalanced"
+            and all(g.get("freshness") == "FRESH" for g in gpus)
+            else [],
+            "gpus": gpus,
+        }
 
     async def recommend_gpu_placement(
         self, server_id: int, required_memory_bytes: int = 0, gpu_count: int = 1
     ) -> dict:
-        """Return a read-only placement recommendation based on the latest sample."""
+        """按新鲜快照排序，再附上进程和近 15 分钟负载，供用户判断任务是否适合。"""
         self._validate_ids(server_id)
         if type(required_memory_bytes) is not int or required_memory_bytes < 0:
             raise ValueError("required_memory_bytes 必须为非负整数")
@@ -192,38 +310,142 @@ class GPUManager:
 
         gpus = await self.list_gpus(server_id)
         if not gpus:
-            return {"server_id": server_id, "status": "no_gpu", "recommendations": [],
-                    "message": "该服务器的最新采样确认没有 GPU。"}
+            return {
+                "server_id": server_id,
+                "status": "no_gpu",
+                "recommendations": [],
+                "message": "该服务器的最新采样确认没有 GPU。",
+            }
 
+        if any(gpu.get("freshness") != "FRESH" for gpu in gpus):
+            return {
+                "server_id": server_id,
+                "status": "stale",
+                "recommendations": [],
+                "execution_performed": False,
+                "message": "采样过期或时间不明，请等待新数据后再作资源建议。",
+            }
         eligible, excluded = [], []
         for gpu in gpus:
             free = gpu["gpu_memory_free"]
             utilization = gpu["utilization"]
             if free is None or utilization is None:
-                excluded.append({"gpu_index": gpu["gpu_index"], "reason": "missing_capacity_or_utilization"})
+                excluded.append(
+                    {
+                        "gpu_index": gpu["gpu_index"],
+                        "reason": "missing_capacity_or_utilization",
+                    }
+                )
             elif free < required_memory_bytes:
-                excluded.append({"gpu_index": gpu["gpu_index"], "reason": "insufficient_free_memory"})
+                excluded.append(
+                    {
+                        "gpu_index": gpu["gpu_index"],
+                        "reason": "insufficient_free_memory",
+                    }
+                )
             else:
                 total, used = gpu["gpu_memory_total"], gpu["gpu_memory_used"]
                 memory_fraction = used / total if total and used is not None else 1.0
                 eligible.append((utilization, memory_fraction, gpu))
 
-        ranked = [entry[2] for entry in sorted(eligible, key=lambda entry: (entry[0], entry[1]))]
+        ranked = [
+            entry[2]
+            for entry in sorted(eligible, key=lambda entry: (entry[0], entry[1]))
+        ]
         selected = ranked[:gpu_count]
-        status = "recommended" if len(selected) == gpu_count else (
-            "insufficient_capacity" if ranked else "insufficient_data")
+        processes, histories, evidence_errors = [], {}, []
+        if selected:
+            # 进程整机只查一次；补充查询并发且限时，不把依赖缺失伪装成空闲。
+            anchor = min(self._time(g["collected_at"]) for g in selected)
+            start, end = (
+                (anchor - timedelta(minutes=15)).isoformat(),
+                anchor.isoformat(),
+            )
+            results = await asyncio.gather(
+                asyncio.wait_for(self.get_gpu_processes(server_id), timeout=10),
+                *(
+                    asyncio.wait_for(
+                        self.get_gpu_history(server_id, g["gpu_index"], start, end),
+                        timeout=10,
+                    )
+                    for g in selected
+                ),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(
+                    result, httpx.HTTPStatusError
+                ) and result.response.status_code in (401, 403):
+                    raise result
+                if isinstance(result, BaseException) and not isinstance(
+                    result, Exception
+                ):
+                    raise result
+            if isinstance(results[0], Exception):
+                evidence_errors.append("processes:UNAVAILABLE")
+            else:
+                processes = results[0]
+            for gpu, rows in zip(selected, results[1:]):
+                if isinstance(rows, Exception):
+                    evidence_errors.append(f"history:{gpu['gpu_index']}:UNAVAILABLE")
+                    continue
+                values = [r.get("utilization") for r in rows]
+                valid = [
+                    v
+                    for v in values
+                    if type(v) in (int, float) and math.isfinite(v) and 0 <= v <= 100
+                ]
+                histories[gpu["gpu_index"]] = {
+                    "window_start": start,
+                    "window_end": end,
+                    "sample_count": len(rows),
+                    "valid_utilization_samples": len(valid),
+                    "average_utilization_percent": round(sum(valid) / len(valid), 2)
+                    if valid
+                    else None,
+                    "first_collected_at": rows[0].get(
+                        "collectedAt", rows[0].get("collected_at")
+                    )
+                    if rows
+                    else None,
+                    "last_collected_at": rows[-1].get(
+                        "collectedAt", rows[-1].get("collected_at")
+                    )
+                    if rows
+                    else None,
+                    "status": "AVAILABLE" if len(valid) >= 2 else "INSUFFICIENT_DATA",
+                }
+        status = (
+            "recommended"
+            if len(selected) == gpu_count
+            else ("insufficient_capacity" if ranked else "insufficient_data")
+        )
         return {
             "server_id": server_id,
             "status": status,
             "requested_gpu_count": gpu_count,
             "required_memory_bytes_per_gpu": required_memory_bytes,
-            "recommendations": [{
-                "gpu_index": gpu["gpu_index"], "gpu_uuid": gpu["gpu_uuid"],
-                "gpu_name": gpu["gpu_name"], "utilization_percent": gpu["utilization"],
-                "free_memory_bytes": gpu["gpu_memory_free"],
-                "collected_at": gpu["collected_at"],
-            } for gpu in selected],
+            "recommendations": [
+                {
+                    "gpu_index": gpu["gpu_index"],
+                    "gpu_uuid": gpu["gpu_uuid"],
+                    "gpu_name": gpu["gpu_name"],
+                    "utilization_percent": gpu["utilization"],
+                    "free_memory_bytes": gpu["gpu_memory_free"],
+                    "collected_at": gpu["collected_at"],
+                    "processes": [
+                        p for p in processes if p["gpu_index"] == gpu["gpu_index"]
+                    ][:100],
+                    "process_evidence_status": "UNAVAILABLE"
+                    if isinstance(results[0], Exception)
+                    else "AVAILABLE",
+                    "historical_load": histories.get(gpu["gpu_index"]),
+                    "reason": "当前空闲显存满足要求，按当前利用率及显存占用排序；进程与历史负载用于人工复核，不保证后续可用。",
+                }
+                for gpu in selected
+            ],
             "excluded_gpus": excluded,
+            "evidence_errors": evidence_errors,
             "execution_performed": False,
             "message": "这是只读分配建议；尚未预留或启动任何任务。",
         }
@@ -231,7 +453,9 @@ class GPUManager:
     async def _call(self, method: str, *args):
         handler = getattr(self.client, method, None)
         if not callable(handler):
-            raise NotImplementedError(f"PlatformClient 尚未实现 {method}，请先补齐平台 GPU 查询接口")
+            raise NotImplementedError(
+                f"PlatformClient 尚未实现 {method}，请先补齐平台 GPU 查询接口"
+            )
         return await handler(*args)
 
     @staticmethod
@@ -242,14 +466,27 @@ class GPUManager:
             raise ValueError("gpu_id 必须为非负整数")
 
     @staticmethod
+    def _freshness(value):
+        try:
+            age = (datetime.now(timezone.utc) - GPUManager._time(value)).total_seconds()
+            return "FRESH" if -60 <= age <= 90 else "STALE"
+        except ValueError:
+            return "UNKNOWN"
+
+    @staticmethod
     def _select(gpus: list[dict], gpu_id: int) -> dict:
-        if gpu_id >= len(gpus):
-            raise ValueError("GPU ID 超出范围")
-        return gpus[gpu_id]
+        for gpu in gpus:
+            if gpu["gpu_index"] == gpu_id:
+                return gpu
+        raise ValueError("指定 GPU 不存在")
 
     @staticmethod
     def _average(values: list) -> float | None:
-        return round(sum(values) / len(values), 2) if values and all(v is not None for v in values) else None
+        return (
+            round(sum(values) / len(values), 2)
+            if values and all(v is not None for v in values)
+            else None
+        )
 
     @staticmethod
     def _total(values: list):

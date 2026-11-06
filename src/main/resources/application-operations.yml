@@ -1,0 +1,11 @@
+# 中心服务的运维模块配置。实际密钥通过进程环境注入。
+aiops:
+  ai-service:
+    url: ${AIOPS_AI_SERVICE_URL:http://127.0.0.1:8000}
+    service-key: ${AIOPS_AI_SERVICE_KEY:}
+  alerts:
+    scheduling-enabled: ${AIOPS_ALERTS_ENABLED:true}
+    interval-ms: ${AIOPS_ALERT_INTERVAL_MS:15000}
+  investigation:
+    worker-enabled: ${AIOPS_INVESTIGATION_ENABLED:true}
+    interval-ms: ${AIOPS_INVESTIGATION_INTERVAL_MS:5000}

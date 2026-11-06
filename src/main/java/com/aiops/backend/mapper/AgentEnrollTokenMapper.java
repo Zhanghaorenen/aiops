@@ -16,7 +16,10 @@ public interface AgentEnrollTokenMapper extends BaseMapper<AgentEnrollTokenEntit
     @Results(id = "enrollToken", value = {
             @Result(column = "id", property = "id", id = true),
             @Result(column = "token_hash", property = "tokenHash"),
+            @Result(column = "cluster_id", property = "clusterId"),
+            @Result(column = "issued_by_user_id", property = "issuedByUserId"),
             @Result(column = "expires_at", property = "expiresAt", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class),
+            @Result(column = "revoked_at", property = "revokedAt", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class),
             @Result(column = "used_at", property = "usedAt", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class),
             @Result(column = "created_at", property = "createdAt", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class)
     })

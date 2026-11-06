@@ -28,6 +28,11 @@ public class NodeEntity {
     @TableField(value = "created_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class, updateStrategy = FieldStrategy.NEVER) private Instant createdAt;
     @TableField(value = "updated_at", jdbcType = JdbcType.TIMESTAMP, typeHandler = UtcInstantTypeHandler.class) private Instant updatedAt;
 
+    @TableField(value="cluster_id",updateStrategy=FieldStrategy.NEVER) private Long clusterId;
+    @TableField(value="owner_user_id",updateStrategy=FieldStrategy.NEVER) private Long ownerUserId;
+    public Long getClusterId(){return clusterId;}
+    public Long getOwnerUserId(){return ownerUserId;}
+    public void assignCluster(Long id){if(id==null || id<=0)throw new IllegalArgumentException("clusterId must be positive");if(clusterId!=null && !clusterId.equals(id))throw new IllegalStateException("Node cluster cannot be reassigned");clusterId=id;}
     protected NodeEntity() {}
 
     public NodeEntity(String nodeKey, String displayName, String hostname, String ip, String osName,

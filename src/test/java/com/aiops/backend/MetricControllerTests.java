@@ -25,9 +25,10 @@ import com.aiops.backend.service.AgentService;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class MetricControllerTests {
+class MetricControllerTests extends com.aiops.backend.ClusterTestSupport {
     @Autowired private MockMvc mvc;
     @Autowired private AgentService agents;
+    @Autowired private com.aiops.backend.service.MetricService service;
     @Autowired private UserRepository users;
     @Autowired private JwtService jwtService;
     private String authorization;
@@ -36,6 +37,7 @@ class MetricControllerTests {
     @BeforeEach
     void prepare() {
         UserEntity account = users.save(new UserEntity("metric-reader", "unused-test-password-hash"));
+        grant(account.getUsername(),"ADMIN");
         authorization = "Bearer " + jwtService.issue(account.getId(), account.getUsername());
         AgentEntity agent = new AgentEntity();
         agent.setName("legacy-agent");
@@ -46,13 +48,10 @@ class MetricControllerTests {
 
     @Test
     void metricEndpointsReturnStoredCpuMemoryDiskAndGpu() throws Exception {
-        mvc.perform(post("/api/metrics").header("Authorization", authorization)
-                        .contentType(MediaType.APPLICATION_JSON).content("""
-                                {"agentId":%d,"cpuUsage":42.5,"memoryUsage":68.0,"diskUsage":51.2,
-                                 "gpuUsage":12.0,"networkInMbps":125.0,"networkOutMbps":80.0}
-                                """.formatted(agentId)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.gpuUsage").value(12.0));
+        var metric=new com.aiops.backend.entity.MetricEntity();metric.setAgentId(agentId);metric.setCpuUsage(42.5);metric.setMemoryUsage(68.0);metric.setDiskUsage(51.2);metric.setGpuUsage(12.0);metric.setNetworkInMbps(125.0);metric.setNetworkOutMbps(80.0);
+        service.recordMetric(metric);
+        mvc.perform(post("/api/metrics").header("Authorization",authorization).contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isGone());
         mvc.perform(get(path("/history")).header("Authorization", authorization))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))

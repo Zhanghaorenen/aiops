@@ -10,7 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import com.aiops.backend.vo.DashboardSummaryVO;
 
 @SpringBootTest
-class DashboardServiceTests {
+class DashboardServiceTests extends com.aiops.backend.ClusterTestSupport {
 
     @Autowired
     private DashboardService dashboardService;

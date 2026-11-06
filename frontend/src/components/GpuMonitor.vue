@@ -17,6 +17,12 @@ const historyLoading = ref(false)
 const error = ref('')
 const chartElement = ref<HTMLDivElement | null>(null)
 const chartError = ref('')
+const clock = ref(Date.now())
+const freshnessTimer = window.setInterval(() => { clock.value = Date.now() }, 10000)
+const stale = computed(() => {
+  const time = Date.parse(snapshot.value?.collectedAt || '')
+  return !!snapshot.value && (!Number.isFinite(time) || clock.value - time > 90000 || time - clock.value > 60000)
+})
 let chart: { setOption: (option: unknown) => void; resize: () => void; dispose: () => void } | null = null
 let observer: ResizeObserver | null = null
 
@@ -24,7 +30,7 @@ const gpus = computed(() => {
   const data = snapshot.value
   if (!data) return []
   return data.gpuUuids.map((uuid, index) => ({
-    gpuIndex: data.gpuIndices?.[index] ?? index,
+    gpuIndex: data.gpuIndices[index]!,
     gpuUuid: uuid,
     name: data.gpuNames?.[index] ?? null,
     memoryTotal: data.gpuMemoryTotal?.[index] ?? null,
@@ -143,10 +149,11 @@ watch(history, async (samples, _, onCleanup) => {
   } catch { if (!disposed) chartError.value = 'GPU 历史图表加载失败' }
 }, { flush: 'post' })
 
-onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose() })
+onBeforeUnmount(() => { clearInterval(freshnessTimer); observer?.disconnect(); chart?.dispose() })
 </script>
 
 <template>
+  <a-alert v-if="stale" type="warning" show-icon message="GPU 采样已过期或时间不可信。以下为历史快照，不能作为当前资源分配依据。" style="margin-bottom:12px" />
   <section class="gpu-monitor">
     <a-alert v-if="error" type="error" show-icon :message="error" />
     <a-alert v-else-if="statusMessage" :type="statusType" show-icon :message="statusMessage" />

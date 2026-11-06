@@ -15,7 +15,7 @@ import com.aiops.backend.exception.ResourceNotFoundException;
 
 @SpringBootTest
 @Transactional
-class AgentServiceImplTests {
+class AgentServiceImplTests extends com.aiops.backend.ClusterTestSupport {
 
     @Autowired
     private AgentService service;

@@ -1,0 +1,5 @@
+# Opt in with the cluster profile alongside dev/prod. Bootstrap is disabled by default.
+aiops:
+  cluster:
+    bootstrap-enabled: ${AIOPS_CLUSTER_BOOTSTRAP_ENABLED:false}
+    bootstrap-user-id: ${AIOPS_CLUSTER_BOOTSTRAP_USER_ID:0}

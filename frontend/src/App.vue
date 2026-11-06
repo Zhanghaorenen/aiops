@@ -38,7 +38,7 @@ watch(() => store.token, (token, _, onCleanup) => {
   const controller = new AbortController()
   onCleanup(() => controller.abort())
   void api.get<{ username: string }>('/api/auth/me', { signal: controller.signal })
-    .then(({ data }) => { if (!controller.signal.aborted) store.username = data.username })
+    .then(async ({ data }) => { if (!controller.signal.aborted) {store.username = data.username;try{const result=await api.get('/api/workspace',{signal:controller.signal});if(!controller.signal.aborted)store.role=result.data.role}catch{if(!controller.signal.aborted)store.role=''}} })
     .catch(() => undefined)
 }, { immediate: true })
 
@@ -51,6 +51,10 @@ watch([() => store.authenticated, () => store.demo, () => store.token, () => sto
     busy = true
     store.loading = true
     try {
+      if (!store.demo) {
+        try { store.role = (await api.get('/api/workspace', { signal: controller.signal })).data.role }
+        catch { if (!controller.signal.aborted) store.role = '' }
+      }
       const data = store.demo ? demoServers() : (await api.get<Server[]>('/api/servers', { signal: controller.signal })).data
       if (!controller.signal.aborted) {
         store.servers = data
@@ -81,7 +85,10 @@ watch([() => store.authenticated, () => store.demo, () => store.token, () => sto
         <a-menu :selected-keys="[page]" @click="onMenuClick">
           <a-menu-item key="overview"><template #icon><DashboardOutlined /></template>运行总览</a-menu-item>
           <a-menu-item key="servers"><template #icon><DesktopOutlined /></template>服务器资源</a-menu-item>
-          <a-menu-item key="access"><template #icon><ApiOutlined /></template>Agent 接入</a-menu-item>
+          <a-menu-item key="workspace"><template #icon><UserOutlined /></template>工作空间</a-menu-item>
+          <a-menu-item key="alerts"><template #icon><SafetyCertificateOutlined /></template>告警中心</a-menu-item>
+          <a-menu-item key="incidents"><template #icon><ExperimentOutlined /></template>故障调查</a-menu-item>
+          <a-menu-item v-if="store.role==='ADMIN'||store.demo" key="access"><template #icon><ApiOutlined /></template>Agent 接入</a-menu-item>
           <a-menu-item key="settings"><template #icon><SettingOutlined /></template>账户设置</a-menu-item>
           <a-menu-item key="knowledge"><template #icon><ExperimentOutlined /></template>运维知识库</a-menu-item>
           <a-menu-item key="ai"><template #icon><RobotOutlined /></template>AI 智能运维</a-menu-item>

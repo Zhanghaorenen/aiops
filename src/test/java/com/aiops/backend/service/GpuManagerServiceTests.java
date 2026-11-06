@@ -23,7 +23,7 @@ import com.aiops.backend.service.AgentAccessService.MetricRequest;
 
 @SpringBootTest
 @Transactional
-class GpuManagerServiceTests {
+class GpuManagerServiceTests extends com.aiops.backend.ClusterTestSupport {
     @Autowired private AgentAccessService agentAccess;
     @Autowired private GpuManagerService gpuManager;
 
@@ -86,7 +86,7 @@ class GpuManagerServiceTests {
 
     private EnrollmentResult enroll(String prefix) {
         String key = prefix + "-" + UUID.randomUUID();
-        return agentAccess.enroll(new EnrollmentRequest(agentAccess.issueEnrollmentToken().token(),
+        return agentAccess.enroll(new EnrollmentRequest(com.aiops.backend.ClusterTestSupport.issue(agentAccess).token(),
                 key, "GPU test node", "gpu-host", "127.0.0.1", "Linux", "test",
                 "amd64", 4, 4096L, key, "test"));
     }

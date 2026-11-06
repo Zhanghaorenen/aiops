@@ -65,7 +65,7 @@ public class GpuManagerController {
             }
             Map<String, Object> safe = new java.util.LinkedHashMap<>();
             safe.put("serverId", serverId);
-            for (String field : List.of("gpuIndex", "pid", "processName", "username", "gpuMemoryUsage", "taskType")) {
+            for (String field : List.of("gpuIndex", "pid", "processName", "username", "gpuMemoryUsage", "taskType", "collectedAt")) {
                 safe.put(field, process.get(field));
             }
             if (process.containsKey("serverId") && !serverId.equals(process.get("serverId"))) {

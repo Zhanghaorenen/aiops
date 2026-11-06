@@ -286,7 +286,10 @@ export async function sendChatStream(
     let event: ChatStreamEvent
     try { event = JSON.parse(data) as ChatStreamEvent }
     catch { throw new Error('AI 服务返回了无效的流式数据') }
-    if (event.type === 'error') throw new Error(event.message || 'AI 智能体执行失败')
+    if (event.type === 'error') {
+      if(event.status===401){localStorage.removeItem('aiops.accessToken');window.dispatchEvent(new Event('aiops:unauthorized'))}
+      throw new Error(event.message || 'AI 智能体执行失败')
+    }
     if (event.type === 'token') answer += event.text
     if (event.type === 'done') finished = true
     onEvent?.(event)

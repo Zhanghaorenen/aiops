@@ -41,7 +41,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class MonitoringAccessTests {
+class MonitoringAccessTests extends com.aiops.backend.ClusterTestSupport {
     @Autowired private MockMvc mvc;
     @Autowired private UserRepository users;
     @Autowired private JwtService jwtService;
@@ -58,6 +58,7 @@ class MonitoringAccessTests {
     @BeforeEach
     void prepareUserAndNode() {
         account = users.save(new UserEntity("monitor-reader", "unused-test-password-hash"));
+        grant(account.getUsername(),"VIEWER");
         jwt = jwtService.issue(account.getId(), account.getUsername());
         target = enroll("target");
     }
@@ -149,6 +150,7 @@ class MonitoringAccessTests {
 
     @Test
     void deletedUserJwtCannotReadUserData() throws Exception {
+        jdbc.update("DELETE FROM ops_cluster_member WHERE user_id=?",account.getId());
         users.delete(account);
         assertUnauthorized(jwt);
     }
@@ -210,7 +212,7 @@ class MonitoringAccessTests {
     }
 
     private EnrollmentResult enroll(String key) {
-        return agents.enroll(new EnrollmentRequest(agents.issueEnrollmentToken().token(),
+        return agents.enroll(new EnrollmentRequest(com.aiops.backend.ClusterTestSupport.issue(agents).token(),
                 "node-" + key, "Node " + key, "host-" + key, "127.0.0.1",
                 "Linux", "test", "amd64", 4, 1000L, "agent-" + key, "0.1.0"));
     }

@@ -19,10 +19,11 @@ import com.aiops.backend.repository.NodeRepository;
 @RequestMapping("/api/servers/{nodeId}/metrics")
 public class ServerMetricController {
     private final NodeRepository nodes;
+    private final com.aiops.backend.service.ClusterPermissionService access;
     private final HostMetricSampleRepository metrics;
 
-    public ServerMetricController(NodeRepository nodes, HostMetricSampleRepository metrics) {
-        this.nodes = nodes; this.metrics = metrics;
+    public ServerMetricController(NodeRepository nodes, HostMetricSampleRepository metrics,com.aiops.backend.service.ClusterPermissionService access) {
+        this.nodes = nodes; this.metrics = metrics;this.access=access;
     }
 
     @GetMapping("/latest")
@@ -45,6 +46,7 @@ public class ServerMetricController {
     }
 
     private void ensureNode(Long nodeId) {
+        access.requireNode(nodeId,com.aiops.backend.security.ClusterPermission.METRIC_VIEW);
         if (!nodes.existsById(nodeId)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "服务器不存在");
     }
 }

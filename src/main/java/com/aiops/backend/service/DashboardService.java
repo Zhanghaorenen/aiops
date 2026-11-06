@@ -23,8 +23,8 @@ public class DashboardService {
     public DashboardSummaryVO getSummary() {
         List<ServerVO> servers = serverService.listServers();
         long onlineServers = servers.stream().filter(server -> isStatus(server.getStatus(), "ONLINE")).count();
-        long totalAgents = agentRepository.count();
-        long onlineAgents = agentRepository.countByStatus("ONLINE");
+        long totalAgents = agentRepository.countForNodes(servers.stream().map(ServerVO::getId).toList(),null);
+        long onlineAgents = agentRepository.countForNodes(servers.stream().map(ServerVO::getId).toList(),"ONLINE");
 
         return new DashboardSummaryVO(
                 servers.size(),

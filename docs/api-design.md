@@ -35,3 +35,8 @@ Vite把 `/api/chat` 和 `/api/ai/health` 代理到FastAPI，其他 `/api` 保持
 原型历史 `/api/metrics/agents/{agentId}/history` 返回最多200条倒序采样；details返回`{agent,latestMetric}`，overview返回`{agentId,hostname,status,latestMetric}`。
 集群overview/details尚未实现，明确返回501。正式节点历史API与数据库来源保持原样。
 
+
+
+## v0.2 新接口
+
+工作空间成员/审计、Agent 管理/Token 撤销、告警、Incident/调查任务/报告、GPU 使用登记接口及权限见 [实现报告](aiops-v02-implementation-report.md)。新 USER 接口必须经过 Service 的成员/角色/服务器权限校验；旧指标上报和旧 Agent 心跳已退役为 410。内部调查入口同时要求独立服务密钥和原用户 JWT，不能仅凭服务密钥读取任意服务器。

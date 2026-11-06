@@ -19,7 +19,7 @@ import com.aiops.backend.exception.ResourceNotFoundException;
 
 @SpringBootTest
 @Transactional
-class MetricServiceTests {
+class MetricServiceTests extends com.aiops.backend.ClusterTestSupport {
 
     @Autowired
     private AgentService agentService;

@@ -18,7 +18,7 @@ import com.aiops.backend.repository.UserRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class AuthFlowTests {
+class AuthFlowTests extends com.aiops.backend.ClusterTestSupport {
     @Autowired private MockMvc mvc;
     @Autowired private UserRepository users;
     @Autowired private PasswordEncoder passwordEncoder;
@@ -27,6 +27,7 @@ class AuthFlowTests {
     @Transactional
     void loginIssuesJwtAndProtectsUserEndpoints() throws Exception {
         users.save(new UserEntity("auth-test", passwordEncoder.encode("a-long-test-password")));
+        grant("auth-test","ADMIN");
 
         mvc.perform(get("/api/servers")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/agent/heartbeat").contentType(MediaType.APPLICATION_JSON)

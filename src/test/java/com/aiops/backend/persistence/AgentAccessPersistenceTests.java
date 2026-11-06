@@ -35,7 +35,7 @@ import com.aiops.backend.service.AgentAccessService.MetricRequest;
 
 @SpringBootTest
 @Transactional
-class AgentAccessPersistenceTests {
+class AgentAccessPersistenceTests extends com.aiops.backend.ClusterTestSupport {
     @Autowired private AgentAccessService service;
     @Autowired private NodeRepository nodes;
     @Autowired private OpsAgentRepository agents;
@@ -61,7 +61,7 @@ class AgentAccessPersistenceTests {
     @Test
     void enrollmentPersistsOneTimeTokenConsumptionAndRejectsReuseWithoutCreatingRows() {
         String key = key("one-time");
-        String token = service.issueEnrollmentToken().token();
+        String token = com.aiops.backend.ClusterTestSupport.issue(service).token();
         EnrollmentResult enrolled = service.enroll(request(token, key, key));
         LocalDateTime usedAt = jdbc.queryForObject(
                 "select used_at from ops_agent_enroll_token where token_hash = ?",
@@ -83,9 +83,9 @@ class AgentAccessPersistenceTests {
     @Test
     void reenrollmentPersistsRotatedCredentialAndInvalidatesOldCredential() {
         String key = key("rotate");
-        EnrollmentResult first = service.enroll(request(service.issueEnrollmentToken().token(), key, key));
+        EnrollmentResult first = service.enroll(request(com.aiops.backend.ClusterTestSupport.issue(service).token(), key, key));
         LocalDateTime createdAt = timestamp("ops_agent", "created_at", first.agentId());
-        String nextToken = service.issueEnrollmentToken().token();
+        String nextToken = com.aiops.backend.ClusterTestSupport.issue(service).token();
         EnrollmentRequest next = request(nextToken, key, key);
         next = new EnrollmentRequest(next.enrollmentToken(), next.nodeKey(), next.displayName(),
                 next.hostname(), next.ip(), next.osName(), next.osVersion(), next.architecture(),
@@ -179,10 +179,10 @@ class AgentAccessPersistenceTests {
         List<String> rawTokens = new ArrayList<>();
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         try {
-            String firstToken = service.issueEnrollmentToken().token();
+            String firstToken = com.aiops.backend.ClusterTestSupport.issue(service).token();
             rawTokens.add(firstToken);
             EnrollmentResult initial = service.enroll(request(firstToken, key, key));
-            String retryToken = service.issueEnrollmentToken().token();
+            String retryToken = com.aiops.backend.ClusterTestSupport.issue(service).token();
             rawTokens.add(retryToken);
 
             ResponseStatusException error = assertThrows(ResponseStatusException.class,
@@ -253,7 +253,7 @@ class AgentAccessPersistenceTests {
 
     private EnrollmentResult enroll(String label) {
         String key = key(label);
-        return service.enroll(request(service.issueEnrollmentToken().token(), key, key));
+        return service.enroll(request(com.aiops.backend.ClusterTestSupport.issue(service).token(), key, key));
     }
 
     private EnrollmentRequest request(String token, String nodeKey, String agentKey) {

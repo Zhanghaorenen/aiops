@@ -9,7 +9,11 @@ class GpuTool:
 
     _HISTORY_METRICS = {
         "utilization": ("utilization", "gpuUtilization", "gpu_utilization"),
-        "memory_utilization": ("memoryUtilization", "memory_utilization", "gpu_memory_utilization"),
+        "memory_utilization": (
+            "memoryUtilization",
+            "memory_utilization",
+            "gpu_memory_utilization",
+        ),
         "gpu_memory_total": ("gpuMemoryTotal", "gpu_memory_total"),
         "gpu_memory_used": ("gpuMemoryUsed", "gpu_memory_used"),
         "gpu_memory_free": ("gpuMemoryFree", "gpu_memory_free"),
@@ -34,21 +38,7 @@ class GpuTool:
     async def get_gpu_processes(
         self, server_id: int, gpu_id: int | None = None
     ) -> list[dict]:
-        # GPUManager's current API queries one GPU at a time; aggregate when
-        # the model asks for all GPU processes.
-        if gpu_id is not None:
-            return await self.gpu_manager.get_gpu_processes(server_id, gpu_id)
-
-        gpus = await self.gpu_manager.list_gpus(server_id)
-        processes: list[dict] = []
-        for gpu in gpus:
-            index = gpu.get("gpu_index")
-            if type(index) is not int or index < 0:
-                raise ValueError("GPUManager 返回了无效的 gpu_index")
-            processes.extend(
-                await self.gpu_manager.get_gpu_processes(server_id, index)
-            )
-        return processes
+        return await self.gpu_manager.get_gpu_processes(server_id, gpu_id)
 
     async def get_gpu_history(
         self,
@@ -67,8 +57,7 @@ class GpuTool:
         if type(limit) is not int or not 1 <= limit <= 5000:
             raise ValueError("limit 必须是 1 至 5000 之间的整数")
 
-        # The current manager returns complete history rows and accepts no
-        # metric/limit arguments. Project the requested metric here.
+        # Manager 沿用后端完整历史行；工具层只投影本次请求的指标并限制返回条数。
         rows = await self.gpu_manager.get_gpu_history(
             server_id, gpu_id, start_time, end_time
         )
@@ -109,7 +98,7 @@ class GpuTool:
     async def recommend_gpu_placement(
         self, server_id: int, required_memory_bytes: int = 0, gpu_count: int = 1
     ) -> dict:
-        """根据最新空闲显存和利用率给出只读 GPU 放置建议，不会启动任务。"""
+        """按最新显存和利用率建议 GPU，附进程及历史负载供复核，不会启动任务。"""
         return await self.gpu_manager.recommend_gpu_placement(
             server_id, required_memory_bytes, gpu_count
         )
@@ -124,7 +113,7 @@ class GpuTool:
 
         @tool
         async def get_gpu_status(server_id: int, gpu_id: int) -> dict:
-            """Get one GPU's latest status; gpu_id is its zero-based index."""
+            """查询单卡最新状态；gpu_id 必须取 list_gpus 返回的真实 gpu_index。"""
             return await self.get_gpu_status(server_id, gpu_id)
 
         @tool
@@ -167,7 +156,7 @@ class GpuTool:
         async def recommend_gpu_placement(
             server_id: int, required_memory_bytes: int = 0, gpu_count: int = 1
         ) -> dict:
-            """按空闲显存和利用率推荐 GPU；仅提供建议，不执行或预留任务。"""
+            """按新鲜显存和利用率推荐 GPU，并附进程/历史负载；不执行或预留任务。"""
             return await self.recommend_gpu_placement(
                 server_id, required_memory_bytes, gpu_count
             )

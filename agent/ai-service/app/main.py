@@ -31,6 +31,8 @@ def create_app(settings: Settings | None = None, platform_factory=PlatformClient
     application.include_router(chat_router)
     from .api.knowledge import router as knowledge_router
     application.include_router(knowledge_router)
+    from .api.investigation import router as investigation_router
+    application.include_router(investigation_router)
 
     @application.get("/api/ai/health")
     def health():

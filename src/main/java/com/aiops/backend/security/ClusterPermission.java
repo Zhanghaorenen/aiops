@@ -1,0 +1,15 @@
+package com.aiops.backend.security;
+
+public enum ClusterPermission {
+  CLUSTER_VIEW,
+  SERVER_VIEW,
+  METRIC_VIEW,
+  GPU_VIEW,
+  AI_DIAGNOSE,
+  AGENT_MANAGE,
+  AGENT_TOKEN_ISSUE,
+  MEMBER_MANAGE,
+  ALERT_RULE_MANAGE,
+  ALERT_ACKNOWLEDGE,
+  INCIDENT_RESOLVE
+}

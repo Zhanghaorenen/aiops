@@ -14,6 +14,11 @@ import com.aiops.backend.service.AgentService;
 @Service
 @Transactional
 public class AgentServiceImpl implements AgentService {
+    @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.service.ClusterPermissionService access;
+    @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.repository.ClusterRepository clusters;
+    private void legacyRead(){access.require(clusters.requireDefault().getId(),com.aiops.backend.security.ClusterPermission.AGENT_MANAGE);}
+    private void legacyWrite(){legacyRead();}
+
 
     private final AgentRepository agentRepository;
 
@@ -24,11 +29,13 @@ public class AgentServiceImpl implements AgentService {
     @Override
     @Transactional(readOnly = true)
     public List<AgentEntity> listAgents() {
+        legacyRead();
         return agentRepository.findAllByOrderByIdAsc();
     }
 
     @Override
     public AgentEntity registerAgent(AgentEntity agent) {
+        legacyWrite();
         Instant now = Instant.now();
 
         AgentEntity saved = new AgentEntity(
@@ -48,12 +55,14 @@ public class AgentServiceImpl implements AgentService {
     @Override
     @Transactional(readOnly = true)
     public AgentEntity getAgentById(Long id) {
+        legacyRead();
         return agentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent not found: " + id));
     }
 
     @Override
     public AgentEntity updateAgent(Long id, AgentEntity agent) {
+        legacyWrite();
         AgentEntity current = getAgentById(id);
         Instant now = Instant.now();
 
@@ -73,6 +82,7 @@ public class AgentServiceImpl implements AgentService {
 
     @Override
     public AgentEntity heartbeat(Long id) {
+        legacyWrite();
         AgentEntity current = getAgentById(id);
         Instant now = Instant.now();
 
@@ -92,6 +102,7 @@ public class AgentServiceImpl implements AgentService {
 
     @Override
     public void deleteAgent(Long id) {
+        legacyWrite();
         if (!agentRepository.existsById(id)) {
             throw new ResourceNotFoundException("Agent not found: " + id);
         }

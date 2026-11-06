@@ -27,7 +27,7 @@ import com.aiops.backend.service.AgentService;
 
 @SpringBootTest
 @Transactional
-class MetricPersistenceTests {
+class MetricPersistenceTests extends com.aiops.backend.ClusterTestSupport {
     // Exact DATETIME(6) values: nanosecond-only Hibernate/H2 precision is not assumed.
     private static final Instant BASE = Instant.parse("2026-01-12T03:04:05.123456Z");
 
@@ -233,7 +233,7 @@ class MetricPersistenceTests {
 
     private EnrollmentResult enroll(String label) {
         String key = label + "-" + UUID.randomUUID();
-        return access.enroll(new EnrollmentRequest(access.issueEnrollmentToken().token(), key,
+        return access.enroll(new EnrollmentRequest(com.aiops.backend.ClusterTestSupport.issue(access).token(), key,
                 "Persistence metric node", "metrics-host", "127.0.0.1", "Linux", "test",
                 "amd64", 4, 4096L, key, "1.0.0"));
     }

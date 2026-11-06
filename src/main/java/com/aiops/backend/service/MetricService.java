@@ -8,6 +8,9 @@ import com.aiops.backend.entity.AgentEntity;
 public interface MetricService {
 
     MetricEntity recordMetric(MetricEntity metric);
+    default MetricEntity recordCollectorMetric(MetricEntity metric) {
+        throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.GONE,"旧指标上报入口已停用，请改用独立 Agent Credential 上报");
+    }
 
     List<MetricEntity> listRecentMetrics(int limit);
 

@@ -50,3 +50,21 @@ sequenceDiagram
 
 Spring Boot 4.1.1 保留，持久层已迁移到专用于 Boot 4 的 MyBatis-Plus Starter。现有表、HTTP 接口和 Flyway V1–V4 保持不变；事务内的对象修改需要显式保存。迁移说明与测试结果见 `mybatis-plus-migration.md`。
 
+
+
+## v0.2 运维闭环
+
+```mermaid
+flowchart LR
+  Agent[轻量采集 Agent] --> Java[Spring Boot / MySQL]
+  Java --> Rules[确定性告警]
+  Rules --> Incident[人工关联 Incident]
+  Incident --> Queue[数据库任务与租约]
+  Queue --> Graph[FastAPI IncidentGraph]
+  Graph --> Read[Server / GPU 只读工具]
+  Graph --> Rag[RagTool / 私有 KB]
+  Graph --> Report[证据与假设分离的报告]
+  Report --> Review[发起人查看 / 人工审核]
+```
+
+普通 GraphAgent/SSE 保留；新增 IncidentGraph 不替代普通问答。工作空间使用已有默认集群角色，GPU 登记只是协作信息。Java 调查线程与监控调度分离，任务不存 JWT，报告含私有来源时不向其他成员开放。真实设备验收与自动化测试状态见实现报告。

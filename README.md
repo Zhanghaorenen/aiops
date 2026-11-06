@@ -99,3 +99,15 @@ Stage A audit, validation evidence and remaining work are recorded in
 Install dependencies and follow [agent/README.md](agent/README.md). Sign in, request a one-time enrollment token with `POST /api/agent/enrollment-tokens`, then set it as `AIOPS_ENROLLMENT_TOKEN` before starting the Agent.
 
 Flyway migrations V1-V4 create the V0.1 schema and preserve the earlier prototype tables. Existing prototype records are not transformed into the new node and metric tables.
+
+
+## v0.2 共享实验室运维闭环
+
+新增共享工作空间 ADMIN/OPERATOR/VIEWER、Agent 管理和令牌撤销、确定性告警、Incident 只读调查、持久化诊断报告及 GPU 使用登记。沿用现有 Vue、Spring Boot/MyBatis-Plus、Python Agent、LangGraph 和官方 LangChain RAG；不做 GPU 虚拟化或自动执行服务器命令。
+
+- [部署与双 GPU 使用流程](docs/aiops-v02-deployment.md)
+- [阶段进度](docs/aiops-v02-development-plan.md)
+- [实现与验证报告](docs/aiops-v02-implementation-report.md)
+- [演示指南](docs/project-demo.md)
+
+实际 MySQL 升级前请先备份；V8 归属方案沿用用户确认的单一 default-cluster，V9–V11 为新增迁移。首次管理员必须显式引导，公开注册不自动提权或加入工作空间。真实设备/LLM/RAG 联调状态请以报告为准。

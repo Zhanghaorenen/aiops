@@ -9,6 +9,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const token = ref<string | null>(localStorage.getItem(TOKEN_KEY))
   const demo = ref(false)
   const username = ref('')
+  const role = ref('')
   const servers = ref<Server[]>([])
   const loading = ref(false)
   const error = ref('')
@@ -39,6 +40,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     token.value = null
     demo.value = false
     username.value = ''
+    role.value = ''
     servers.value = []
     enrollment.value = null
     error.value = ''
@@ -54,6 +56,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function refresh() { revision.value++ }
 
-  return { token, demo, username, servers, loading, error, updatedAt, autoRefresh, revision,
+  return { token, demo, username, role, servers, loading, error, updatedAt, autoRefresh, revision,
     register, enrollment, authenticated, login, startDemo, logout, issueEnrollmentToken, refresh }
 })

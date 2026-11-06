@@ -40,7 +40,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (authorization != null && authorization.startsWith("Bearer ")) {
             try {
                 Claims claims = jwtService.parse(authorization.substring(7));
-                if (users.findByUsername(claims.getSubject()).filter(user -> "ACTIVE".equals(user.getStatus())).isEmpty()) {
+                if (users.findByUsername(claims.getSubject()).filter(user -> "ACTIVE".equals(user.getStatus()) && user.getId().equals(claims.get("uid",Long.class))).isEmpty()) {
                     SecurityContextHolder.clearContext();
                     chain.doFilter(request, response);
                     return;

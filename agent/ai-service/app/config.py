@@ -27,6 +27,7 @@ class Settings:
     chat_timeout: float = 90.0
     max_rounds: int = 4
     rag_service_key: str = field(default="", repr=False)
+    ai_service_key: str = field(default="", repr=False)
     rag_storage_dir: str = "data/knowledge"
     embedding_path: str = ""
     embedding_version: str = ""
@@ -57,6 +58,7 @@ class Settings:
             backend_url=http_url(os.getenv("AIOPS_BACKEND_URL", "http://127.0.0.1:8080").strip(), "AIOPS_BACKEND_URL"),
             llm_base_url=http_url(llm_url, "AIOPS_LLM_BASE_URL") if llm_url else "",
             llm_model=os.getenv("AIOPS_LLM_MODEL", "").strip(),
+            ai_service_key=os.getenv("AIOPS_AI_SERVICE_KEY", ""),
             rag_service_key=os.getenv("AIOPS_RAG_SERVICE_KEY", ""),
             rag_storage_dir=os.getenv("AIOPS_RAG_STORAGE_DIR", "data/knowledge"),
             embedding_path=os.getenv("AIOPS_EMBEDDING_PATH", ""),
