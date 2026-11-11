@@ -202,22 +202,6 @@ const columns = [
 ]
 </script>
 <template>
-  <div class="info-hero">
-    <div>
-      <span class="eyebrow">OPERATIONS CONTROL</span>
-      <h2>监控策略与事件态势</h2>
-      <p>
-        用预设策略快速接入监控，在告警详情中一键发起只读 AI
-        调查。人工确认不等于指标恢复，诊断假设与真实证据分别展示。
-      </p>
-    </div>
-    <a-tag color="cyan"
-      >{{
-        events.filter((e) => e.status !== 'RESOLVED').length
-      }}
-      个活动事件</a-tag
-    >
-  </div>
   <div class="operations-instruments">
     <ResourceGauge
       label="规则启用率"
@@ -241,8 +225,7 @@ const columns = [
     />
     <section class="event-instrument">
       <header>
-        <span class="eyebrow">ACTIVE EVENTS</span
-        ><span class="live-pill"><i />15 秒刷新</span>
+        <span>活动事件</span><span class="live-pill"><i />15 秒刷新</span>
       </header>
       <strong
         >{{ loaded ? unresolved.length : '—' }}<small>未恢复事件</small></strong
@@ -265,7 +248,6 @@ const columns = [
           已确认</span
         >
       </div>
-      <p>在事件详情发起 AI 分析，查看数据证据与处理建议。</p>
     </section>
   </div>
   <a-alert v-if="error" :message="error" type="error" show-icon /><a-tabs
@@ -329,24 +311,16 @@ const columns = [
           ></template
         ></a-table
       ></a-tab-pane
-    ><a-tab-pane key="presets" tab="预设告警策略"
-      ><p class="muted">
-        阈值是可修改的初始建议。同一服务器相同指标不会重复添加；显存占用提示不等于硬件故障。
-      </p>
+    ><a-tab-pane key="presets" tab="预设告警策略">
       <div class="preset-grid">
         <button
-          v-for="(p, index) in presets"
+          v-for="p in presets"
           :key="p.key"
           class="preset-tile"
           :class="{ selected: selected === p.key }"
           @click="selected = p.key"
         >
-          <span class="preset-code"
-            >POLICY / 0{{ index + 1
-            }}<span>{{
-              selected === p.key ? '已选择' : '预设策略'
-            }}</span></span
-          ><strong>{{ p.name }}</strong
+          <strong>{{ p.name }}</strong
           ><b
             >{{ p.threshold }} <small>{{ p.unit }}</small></b
           >

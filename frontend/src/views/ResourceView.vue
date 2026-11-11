@@ -25,12 +25,8 @@ watch(
       ><a-select
         v-model:value="selected"
         :options="store.servers.map((s) => ({ value: s.id, label: s.name }))"
-        style="min-width: 260px" /></a-space
-    ><span class="muted">{{
-      reservation
-        ? '统一时间预约 · 实际进程独立核实'
-        : '真实采样 · 不执行服务器操作'
-    }}</span>
+        style="min-width: 260px"
+    /></a-space>
   </div>
   <template v-if="selected && !store.demo"
     ><GpuUsage v-if="reservation" :server-id="selected" /><GpuMonitor

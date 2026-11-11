@@ -157,9 +157,7 @@ watch(
     <div v-else class="console-shell">
       <aside class="navigation">
         <RouterLink class="brand" to="/overview"
-          ><SafetyCertificateOutlined /><span
-            >AIOps<small>运维工作台</small></span
-          ></RouterLink
+          ><SafetyCertificateOutlined /><span>AIOps</span></RouterLink
         >
         <button
           class="mobile-nav-toggle"
@@ -169,7 +167,6 @@ watch(
         >
           {{ mobileMenuOpen ? '收起导航' : '导航菜单' }}
         </button>
-        <div class="nav-caption">工作空间</div>
         <a-menu
           :class="{ 'mobile-menu-open': mobileMenuOpen }"
           mode="inline"
@@ -187,20 +184,20 @@ watch(
             ><template #title>资源管理</template>
             <a-menu-item key="servers">服务器管理</a-menu-item
             ><a-menu-item key="gpu">GPU 监控与进程</a-menu-item
-            ><a-menu-item key="training">训练任务协同</a-menu-item><a-menu-item key="reservations">GPU 资源预约</a-menu-item>
+            ><a-menu-item key="training">训练任务协同</a-menu-item
+            ><a-menu-item key="reservations">GPU 资源预约</a-menu-item>
           </a-sub-menu>
           <a-sub-menu key="operations"
             ><template #icon><SafetyCertificateOutlined /></template
-            ><template #title>运维中心</template
+            ><template #title>告警中心</template
             ><a-menu-item key="alerts">事件与告警策略</a-menu-item></a-sub-menu
           >
           <a-menu-item key="ai"
-            ><template #icon><RobotOutlined /></template>AI
-            运维助手</a-menu-item
+            ><template #icon><RobotOutlined /></template>AI 助手</a-menu-item
           >
           <a-menu-item key="knowledge"
             ><template #icon><ExperimentOutlined /></template
-            >运维知识库</a-menu-item
+            >知识库</a-menu-item
           >
           <a-sub-menu key="system"
             ><template #icon><SettingOutlined /></template
@@ -215,12 +212,8 @@ watch(
         </a-menu>
         <div class="nav-footer">
           <span class="connection-dot" :class="{ bad: store.error }" />{{
-            store.demo
-              ? '演示工作空间'
-              : store.error
-                ? '连接异常'
-                : '本地工作空间'
-          }}<small>SHARED INFRASTRUCTURE / V0.3</small>
+            store.demo ? '演示工作空间' : store.error ? '连接异常' : '工作空间'
+          }}
         </div>
       </aside>
       <div class="workspace">
@@ -256,11 +249,7 @@ watch(
           </a-alert>
           <div class="page-heading">
             <div>
-              <div class="eyebrow">
-                INFRASTRUCTURE / {{ page.toUpperCase() }}
-              </div>
               <h1>{{ route.meta.title }}</h1>
-              <p class="muted">{{ route.meta.description }}</p>
             </div>
             <a-space wrap>
               <template v-if="['overview', 'servers'].includes(page)">
@@ -302,8 +291,7 @@ watch(
           >
           <RouterView />
           <footer class="content-footer">
-            <span>AIOps Agent Platform</span
-            ><span
+            <span
               >{{
                 store.updatedAt
                   ? `数据更新于 ${formatTime(store.updatedAt)}`

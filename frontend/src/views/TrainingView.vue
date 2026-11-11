@@ -236,13 +236,7 @@ function processTree() {
 </script>
 <template>
   <div class="info-hero">
-    <div>
-      <h2>多人训练资源协同</h2>
-      <p>
-        登记资源峰值，检查整机 RAM 与 GPU 显存承诺。当前采用手动启动、PID
-        关联模式，共享预约不提供硬件隔离。
-      </p>
-    </div>
+    <span>目标服务器</span>
     <a-select
       v-model:value="server"
       style="min-width: 240px"

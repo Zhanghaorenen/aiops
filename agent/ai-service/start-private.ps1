@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $ConfigPath)) {
-    throw '缺少本机私有 AI 配置，请参考 docs/deepseek-knowledge-setup.md。'
+    throw '缺少本机私有 AI 配置，请参考 docs/quickstart.md。'
 }
 $settings = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 foreach ($setting in $settings.PSObject.Properties) {

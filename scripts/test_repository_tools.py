@@ -3,6 +3,10 @@ from pathlib import Path
 import tempfile
 import unittest
 from run import load_env
+from unittest.mock import patch
+from contextlib import redirect_stdout
+import io
+import check_repository
 
 
 class EnvironmentFileTests(unittest.TestCase):
@@ -32,3 +36,20 @@ class EnvironmentFileTests(unittest.TestCase):
                 with self.assertRaises(ValueError) as raised:
                     self.parse(text)
                 self.assertNotIn("private-value", str(raised.exception))
+
+
+class PublicLinkTests(unittest.TestCase):
+    def check_link(self, include_target):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "README.md").write_text("[Guide](notes.md)", encoding="utf-8")
+            (root / "notes.md").write_text("local-only-content", encoding="utf-8")
+            names = ["README.md", "notes.md"] if include_target else ["README.md"]
+            with patch.object(check_repository, "ROOT", root), patch.object(check_repository, "files", return_value=names), redirect_stdout(io.StringIO()):
+                return check_repository.check()
+
+    def test_local_only_target_cannot_mask_a_broken_public_link(self):
+        self.assertTrue(self.check_link(False))
+
+    def test_tracked_link_target_is_accepted(self):
+        self.assertFalse(self.check_link(True))

@@ -88,10 +88,10 @@ function confirmReset() {
 </script>
 
 <template>
-  <section class="chat-panel" aria-label="AI 智能运维对话">
+  <section class="chat-panel" aria-label="AI 对话">
     <header class="chat-header">
       <div class="chat-heading">
-        <RobotOutlined /><strong>AI 智能运维助手</strong>
+        <RobotOutlined /><strong>AI 助手</strong>
       </div>
       <a-space>
         <a-tooltip title="新建会话"

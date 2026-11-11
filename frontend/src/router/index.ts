@@ -74,7 +74,7 @@ export const router = createRouter({
       path: '/ai',
       component: () => import('../views/AiChatView.vue'),
       meta: {
-        title: 'AI 智能运维',
+        title: 'AI 助手',
         section: 'ai',
         description: '服务器查询与只读运维诊断',
       },
@@ -83,7 +83,7 @@ export const router = createRouter({
       path: '/knowledge',
       component: () => import('../views/KnowledgeView.vue'),
       meta: {
-        title: '运维知识库',
+        title: '知识库',
         section: 'knowledge',
         description: '私人文档与知识检索',
       },
@@ -96,7 +96,7 @@ export const router = createRouter({
     {
       path: '/alerts',
       component: () => import('../views/AlertsView.vue'),
-      meta: { title: '运维中心', section: 'alerts' },
+      meta: { title: '告警中心', section: 'alerts' },
     },
     { path: '/incidents', redirect: '/alerts?tab=incidents' },
     {

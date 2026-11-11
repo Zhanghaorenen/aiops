@@ -38,7 +38,7 @@ const progress = computed(() =>
   >
     <header>
       <span class="gauge-indicator" />{{ label
-      }}<span class="gauge-caption">{{ known ? '当前值' : '暂无数据' }}</span>
+      }}<span v-if="!known" class="gauge-caption">暂无数据</span>
     </header>
     <div
       class="gauge-dial"
@@ -95,6 +95,6 @@ const progress = computed(() =>
         </text>
       </svg>
     </div>
-    <footer>{{ note || '等待有效采样' }}</footer>
+    <footer v-if="note">{{ note }}</footer>
   </section>
 </template>

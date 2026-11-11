@@ -39,3 +39,19 @@ models/
 *.safetensors
 *.gguf
 **/agent.env
+
+# 本地开发记录，不随产品文档发布
+/docs/archive/
+/docs/release-readiness.md
+/docs/v04-training-implementation.md
+/docs/agent-server-deployment.md
+/docs/deepseek-knowledge-setup.md
+/docs/portfolio.md
+/docs/aiops-v02-deployment.md
+/docs/development.md
+/docs/requirements.md
+/docs/roadmap.md
+
+/docs/mybatis-plus-migration.md
+/docs/RAG知识库使用与源码指南.md
+/docs/database-design.md

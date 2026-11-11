@@ -18,6 +18,7 @@ def files():
 def check():
     issues = []
     names = files()
+    public = {name for name in names if (ROOT / name).is_file()}
     key_pattern = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}")
     private_pattern = re.compile(r"-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----")
     for name in names:
@@ -48,6 +49,12 @@ def check():
                 target = unquote(target.split("#", 1)[0])
                 if target and not (path.parent / target).exists():
                     issues.append(f"{name}: 本地链接不存在: {target}")
+                elif target:
+                    resolved = (path.parent / target).resolve()
+                    if resolved.is_file() and resolved.is_relative_to(ROOT):
+                        relative = resolved.relative_to(ROOT).as_posix()
+                        if relative not in public:
+                            issues.append(f"{name}: 链接目标未纳入仓库: {target}")
     print(f"检查 {len(names)} 个候选文件；问题 {len(issues)} 项")
     for issue in issues:
         print(issue)

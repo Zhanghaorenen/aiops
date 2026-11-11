@@ -214,14 +214,7 @@ const columns = [
 ]
 </script>
 <template>
-  <div class="info-hero">
-    <div>
-      <h2>把运维经验变成可检索的依据</h2>
-      <p>
-        上传服务器环境、操作手册或故障案例，让 AI
-        在回答时引用你的资料。先创建知识库，再用模板写一份文档，最后测试检索。私人文档只对当前账号可见。
-      </p>
-    </div>
+  <div class="table-toolbar">
     <a-button type="primary" @click="tab = 'templates'">从模板开始</a-button>
   </div>
   <a-alert v-if="error" type="error" :message="error" show-icon /><a-card
@@ -258,10 +251,6 @@ const columns = [
           :kb-id="selected"
           @uploaded="loadDocs"
         /><a-empty v-else description="请先创建或选择一个知识库" />
-        <p class="muted" style="margin-top: 12px">
-          READY 表示解析、分块与 Embedding
-          已完成；处理中尚无细分进度，不将阶段状态伪装成百分比。
-        </p>
         <a-table
           style="margin-top: 18px"
           :columns="columns"

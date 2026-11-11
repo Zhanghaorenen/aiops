@@ -166,19 +166,6 @@ watch(
 </script>
 
 <template>
-  <div class="telemetry-hero">
-    <div>
-      <span class="eyebrow">CLUSTER TELEMETRY</span>
-      <h2>资源运行态势</h2>
-      <p>主机、GPU 与温度传感器，汇集于同一工作台。</p>
-    </div>
-    <a-space wrap
-      ><span class="live-pill"
-        ><i />{{ store.autoRefresh ? '自动刷新 · 30 秒' : '手动刷新' }}</span
-      ><a-button @click="router.push('/reservations')"
-        >GPU 预约日历 <ArrowRightOutlined /></a-button
-    ></a-space>
-  </div>
   <div class="summary-grid">
     <SummaryStat
       label="服务器总量"
@@ -187,25 +174,13 @@ watch(
       :note="`${store.servers.length - online.length} 台离线`"
       ><DesktopOutlined
     /></SummaryStat>
-    <SummaryStat
-      label="在线服务器"
-      :value="online.length"
-      suffix="台"
-      note="根据 Agent 心跳判断"
+    <SummaryStat label="在线服务器" :value="online.length" suffix="台"
       ><CheckCircleOutlined
     /></SummaryStat>
-    <SummaryStat
-      label="已读取 GPU"
-      :value="gpuTotal ?? '—'"
-      suffix="张"
-      note="授权服务器上报的设备"
+    <SummaryStat label="已读取 GPU" :value="gpuTotal ?? '—'" suffix="张"
       ><DatabaseOutlined
     /></SummaryStat>
-    <SummaryStat
-      label="未恢复告警"
-      :value="alertCount ?? '—'"
-      suffix="项"
-      note="包含已确认、未恢复事件"
+    <SummaryStat label="未恢复告警" :value="alertCount ?? '—'" suffix="项"
       ><DashboardOutlined
     /></SummaryStat>
   </div>
@@ -214,7 +189,6 @@ watch(
       label="CPU 平均使用率"
       :value="average('cpuUsage') === '—' ? null : Number(average('cpuUsage'))"
       accent="cyan"
-      note="在线主机最新采样"
     />
     <ResourceGauge
       label="内存平均使用率"
@@ -222,14 +196,8 @@ watch(
         average('memoryUsage') === '—' ? null : Number(average('memoryUsage'))
       "
       accent="blue"
-      note="在线主机最新采样"
     />
-    <ResourceGauge
-      label="GPU 平均利用率"
-      :value="gpuLoad"
-      accent="violet"
-      note="有新鲜快照的主机"
-    />
+    <ResourceGauge label="GPU 平均利用率" :value="gpuLoad" accent="violet" />
     <ResourceGauge
       :label="heatLabel"
       :value="hostHeat"

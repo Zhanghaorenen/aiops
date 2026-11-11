@@ -1,21 +1,21 @@
-# AIOps Agent Platform
+# AIOps
 
-**共享 GPU 训练资源协同与智能运维平台**
+**GPU 训练资源协作与诊断**
 
 [![CI](https://github.com/Zhanghaorenen/aiops/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanghaorenen/aiops/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 面向实验室与小型团队共用 GPU 服务器的场景，提供主机/GPU 监控、训练资源准入、告警调查及带知识库引用的 AI 对话。受管服务器仅运行轻量 Python Agent，模型与管理服务集中部署。
 
-[快速开始](docs/quickstart.md) · [架构设计](docs/architecture.md) · [演示流程](docs/project-demo.md) · [源码与面试讲解](docs/portfolio.md) · [文档索引](docs/README.md)
+[快速开始](docs/quickstart.md) · [架构设计](docs/architecture.md) · [演示流程](docs/project-demo.md) · [文档索引](docs/README.md)
 
 ![运行总览与资源仪表盘](docs/images/overview.png)
 
-> 截图为 V0.3 本地联调时的实际界面，展示当时采样，不代表当前实时状态，也不代表 V0.4 已完成真实训练验收。
+> 界面演示使用标注的示例数据；缺少 GPU 与历史采样时显示空状态。
 
 ## 解决的问题
 
-多人共用 GPU 时，显存空闲并不等于整机资源足够：RAM、CPU、磁盘和网络也可能成为瓶颈。平台将资源观测、使用承诺、实际进程与诊断建议关联起来，帮助使用者判断谁在占用资源、任务是否可以接入、训练变慢有哪些证据。
+多人共用 GPU 时，显存空闲并不等于整机资源足够：RAM、CPU、磁盘和网络也可能成为瓶颈。AIOps 将资源观测、使用承诺、实际进程与诊断建议关联起来，帮助使用者判断谁在占用资源、任务是否可以接入、训练变慢有哪些证据。
 
 ## 功能
 
@@ -78,15 +78,12 @@ agent/ai-service/app/             FastAPI、LangGraph、Tools、RAG
 frontend/src/                    Vue 控制台与流式对话
 scripts/                         开发启动与仓库检查
 docs/                            当前架构、使用与演示说明
-docs/archive/                    历史阶段记录
 .github/workflows/               Java / Python / Vue 检查
 ```
 
-## 验证与完成度
+## 开发检查
 
-V0.4 已记录的本地自动化结果：Java 129 项、Agent 20 项、Vue 23 项通过；AI 64 项中 63 项通过，外部 Qdrant 专项测试因未配置测试地址跳过。测试包含 H2、模拟 HTTP/传感器和组件检查，不是模型准确率或生产压测结果。本次整理的检查另见 [发布准备记录](docs/release-readiness.md)。
-
-主机/GPU 上报与 V0.3 页面有历史真实联调记录；V0.4 训练功能尚未完成真实 MySQL 迁移、GPU 多用户并发及模型联合验收。子进程树和历史查询存在返回上限。详见 [V0.4 实现说明](docs/v04-training-implementation.md)。CI 状态以 Actions 实际运行结果为准。
+CI 覆盖 Java、Python 和 Vue。物理采样、模型效果与多用户训练需在实际环境中验证；共享模式是资源承诺，不是硬件隔离。
 
 ```bash
 ./mvnw test
