@@ -1,70 +1,50 @@
-# 总体架构
+# 架构与设计取舍
 
-## 当前工程审查
+## 服务边界
 
-- 后端：Spring Boot 4.1.1、Java 17、Maven、Spring MVC、MyBatis-Plus 3.5.18；持久化默认 MySQL，测试使用 H2 和相同的 Flyway 迁移。
-- 已有 API：健康检查、Agent CRUD/心跳、指标写入/最近/最新、服务器列表/详情、Dashboard 摘要。
-- 原型实体仍保留；新增用户、节点资产、Agent 凭证/注册令牌和主机指标实体。
-- V0.1 后端基础：Spring Security、BCrypt、JWT、Flyway、独立节点资产和独立 Agent 凭证。
-- 缺失：指标保留清理和 Agent 接口速率限制；Python Agent 和前端已有最小实现，仍需真实主机和浏览器联调。
-- 阶段 A 已实际启动 MySQL 并验证本机真实采样写入和用户查询；完整证据、限制见 `stage-a-report.md`。
-- 实际源码和 Git 仓库位于 `D:\work\aiops\backend`，origin 为 Zhanghaorenen/aiops。
-
-## 目标组件及数据流
-
-```mermaid
-flowchart LR
-  UI[Vue 3 管理界面] -->|JWT 用户 API| API[Spring Boot API]
-  Agent[Python Agent] -->|Agent 凭证| API
-  API --> DB[(MySQL 8)]
-  UI -->|用户JWT + /api/chat| AI[FastAPI AI Service]
-  AI -->|验证用户JWT / 三个只读Tool| API
-  AI -->|OpenAI兼容接口| LLM[中心模型服务]
-```
+- Vue 3 + TypeScript + Ant Design Vue：资产、仪表盘、训练协同、告警、知识库及 SSE 对话。
+- Spring Boot + Spring Security + MyBatis-Plus：用户、工作空间、Agent 身份、物理采样、资源承诺、告警与调查任务。
+- FastAPI + LangChain + LangGraph：模型协议适配、有限工具循环、流式事件、知识检索与只读诊断。
+- Python Agent：psutil / NVML / Linux 原生接口采样，通过独立凭据定时上报；服务器不部署大模型。
+- MySQL 是业务与监控存储，Flyway 负责 V1–V13 演进；Qdrant 只存知识向量，不作为第二套监控库。
 
 ```mermaid
 sequenceDiagram
-  participant A as Agent
-  participant S as Spring Boot
-  participant D as MySQL
-  A->>S: 注册令牌 + 节点/Agent 基础信息
-  S->>D: 校验令牌摘要、建立节点和 Agent、存凭证摘要
-  S-->>A: Agent 凭证（仅此次返回）
-  A->>S: Bearer Agent 凭证 + 心跳/指标
-  S->>D: 更新最新状态并追加历史采样
-  UI->>S: 用户 JWT + 查询节点/指标
-  S->>D: 查询资产和采样
+    participant A as 采集 Agent
+    participant J as Java API
+    participant D as MySQL
+    participant W as Vue
+    participant F as FastAPI / LangGraph
+    A->>J: Agent Credential + 定时采样
+    J->>D: 校验白名单并追加历史
+    W->>J: 用户 JWT + 指标查询
+    W->>F: 用户 JWT + 问题
+    F->>J: 同一用户 JWT + 只读工具查询
+    J->>D: 按当前成员角色授权并读取
+    J-->>F: 采样事实与时间
+    F-->>W: SSE 文本 / 工具状态 / 引用
 ```
 
-## 模块边界
+## 资源准入
 
-- `security`：用户 JWT 解析、密码校验和端点授权。
-- `agent`：独立 Agent 凭证过滤器、注册、心跳和指标写入；不复用用户 JWT。
-- `node`：服务器资产生命周期与 Agent 实例分离。
-- `metric`：追加式历史采样、最新状态查询和输入校验。
-- `db/migration`：Flyway 版本化演进，负责建表；MyBatis-Plus 不自动建表或修改结构。
-- `mapper`：MyBatis-Plus `BaseMapper` 和必要的自定义 SQL。
-- `repository`：保留业务查询入口，组合 Mapper 完成查询、显式保存和条数限制。
-- `persistence`：UTC 时间转换，保证现有 `DATETIME(6)` 数据兼容。
-- 前端和 Agent 各自独立部署；AI Service 后续仅通过内部 API 调用只读工具。
+训练任务复用原 `ops_gpu_usage` 的时间、GPU 和用户信息，扩展表保存训练元数据与事件。创建、编辑、重新检查及关键状态转换先锁对应服务器行，再读取已承诺资源，覆盖“空结果也要保护”的并发情况。
 
-Spring Boot 4.1.1 保留，持久层已迁移到专用于 Boot 4 的 MyBatis-Plus Starter。现有表、HTTP 接口和 Flyway V1–V4 保持不变；事务内的对象修改需要显式保存。迁移说明与测试结果见 `mybatis-plus-migration.md`。
+近期准入基于实际 Available RAM / Free VRAM；正在运行的任务已经反映在实际可用量中，不再次扣除其估计峰值。远期按容量承诺，启动前重新检查。RAM 跨所有 GPU 汇总，显存在目标 GPU 内汇总。所有相交窗口保守累加，可能拒绝部分可精细错峰安排的组合。
 
+旧时间预约按独占处理；共享模式是软约束，不能阻止用户绕过平台直接运行程序。没有引入 Kubernetes、Slurm 或硬件隔离机制。
 
+## 身份与故障判断
 
-## v0.2 运维闭环
+PID 会复用，关联还要求启动时间、Linux 用户与 GPU 一致。管理员维护平台用户与 Linux 用户映射。Agent 确认退出但拿不到退出码时记录 EXITED_UNKNOWN，结果由用户或 SDK 确认；不能仅因 GPU 暂时不活跃认定进程退出。
 
-```mermaid
-flowchart LR
-  Agent[轻量采集 Agent] --> Java[Spring Boot / MySQL]
-  Java --> Rules[确定性告警]
-  Rules --> Incident[人工关联 Incident]
-  Incident --> Queue[数据库任务与租约]
-  Queue --> Graph[FastAPI IncidentGraph]
-  Graph --> Read[Server / GPU 只读工具]
-  Graph --> Rag[RagTool / 私有 KB]
-  Graph --> Report[证据与假设分离的报告]
-  Report --> Review[发起人查看 / 人工审核]
-```
+告警使用确定性规则，包括数据新鲜度、持续窗口、恢复阈值和冷却；人工确认不等于指标恢复。Incident 调查复用数据库队列、请求幂等键及租约，由后台 Worker 调用 FastAPI，诊断报告保存后供人工复核。
 
-普通 GraphAgent/SSE 保留；新增 IncidentGraph 不替代普通问答。工作空间使用已有默认集群角色，GPU 登记只是协作信息。Java 调查线程与监控调度分离，任务不存 JWT，报告含私有来源时不向其他成员开放。真实设备验收与自动化测试状态见实现报告。
+## AI 与知识库
+
+模型只获得注册的只读工具。每次工具调用带用户 JWT 返回 Java 重新授权，不信任模型自己声明的角色。工具循环及结果大小受限，历史对话和检索内容作为不可信数据处理。
+
+知识库原文件、解析状态与向量索引分开管理；Qdrant 查询带知识库、文档及版本范围约束。回答引用只来自实际检索结果。模型权重、API Key 与知识原文不提交到仓库。
+
+## 当前工程边界
+
+尚无生产规模容量或高可用验证；指标/训练进度保留清理策略、跨模型向量迁移、任务资源硬隔离及任意远程执行均不属于已验收能力。V0.4 的真实 MySQL/GPU/模型联合验收仍待完成，见 [版本说明](v04-training-implementation.md)。

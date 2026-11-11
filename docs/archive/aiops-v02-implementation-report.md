@@ -83,7 +83,7 @@ Token 撤销与注册锁同一条记录，并发只允许一方成功。心跳/�
 
 新增 application-operations.yml：AIOPS_AI_SERVICE_URL、AIOPS_AI_SERVICE_KEY、AIOPS_ALERTS_ENABLED / ALERT_INTERVAL_MS、AIOPS_INVESTIGATION_ENABLED / INVESTIGATION_INTERVAL_MS。FastAPI 增加 AIOPS_AI_SERVICE_KEY。保持 RAG 服务密钥、本地模型和其他配置。密钥不填默认值、不写仓库。
 
-操作步骤见 [部署指南](aiops-v02-deployment.md)；初始化 ADMIN 需显式确认 userId，不能给公开首个注册用户自动授权。
+操作步骤见 [部署指南](../aiops-v02-deployment.md)；初始化 ADMIN 需显式确认 userId，不能给公开首个注册用户自动授权。
 
 ## 已执行测试
 

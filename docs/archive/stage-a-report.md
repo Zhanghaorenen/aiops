@@ -8,7 +8,7 @@
 
 ## 1. 审计来源与实际问题
 
-以 `D:\work\aiops\backend` 当前工作树为准，origin 为 `https://github.com/Zhanghaorenen/aiops.git`，开始审计时 HEAD 为 `cfa5da0`。
+以 `<repository-root>` 当前工作树为准，origin 为 `https://github.com/Zhanghaorenen/aiops.git`，开始审计时 HEAD 为 `cfa5da0`。
 扫描了仓库文件清单及 Vue、Java、Python Agent、AI Service、数据库迁移、测试和启动文档。
 工作开始时已经存在 AI、注册、用户实体等未提交改动；本次在其上修复，没有回退或提交用户代码，也未声称本地工作树与远程最新内容完全一致。
 

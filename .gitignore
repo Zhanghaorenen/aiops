@@ -14,3 +14,28 @@ hs_err_pid*.log
 src/main/resources/application-dev.properties
 
 agent/ai-service/evaluation/*.local.json
+
+# Local IDE, caches and private deployment state
+.idea/
+.vscode/
+*.iml
+.venv/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+.env.*
+!.env.example
+!.env.rag.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sql.gz
+# Keep Flyway SQL and committed sample documents; dumps belong in data/.
+
+# Downloaded model weights and local run configuration
+models/
+*.safetensors
+*.gguf
+**/agent.env

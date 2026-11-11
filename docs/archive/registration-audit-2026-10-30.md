@@ -8,7 +8,7 @@
 
 **另有一个实测确认的权限缺口尚未修复：新注册用户登录后能够看到已有服务器。当前查询按 USER 角色授权，尚未按用户/资产归属过滤。该项应作为独立的数据权限任务处理，不能因注册成功就认为用户数据隔离已经完成。**
 
-审计目录：`D:\work\aiops\backend`。真实前端为 `http://localhost:5173`，后端为 `http://127.0.0.1:8080`，数据来自本机 MySQL `aiops`。
+审计目录：`<repository-root>`。真实前端为 `http://localhost:5173`，后端为 `http://127.0.0.1:8080`，数据来自本机 MySQL `aiops`。
 
 ## 每类问题及原因
 
@@ -46,7 +46,7 @@
 自动化命令：
 
 ```powershell
-cd D:\work\aiops\backend
+cd <repository-root>
 mvn -o test
 cd frontend
 npm test

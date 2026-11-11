@@ -11,20 +11,23 @@
 	<groupId>com.aiops</groupId>
 	<artifactId>backend</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name/>
-	<description/>
-	<url/>
+	<name>AIOps Agent Platform</name>
+	<description>Shared GPU training coordination and evidence-based operations diagnostics.</description>
+	<url>https://github.com/Zhanghaorenen/aiops</url>
 	<licenses>
-		<license/>
+		<license>
+			<name>MIT License</name>
+			<url>https://opensource.org/license/mit/</url>
+		</license>
 	</licenses>
 	<developers>
-		<developer/>
+		<developer><id>Zhanghaorenen</id><name>Zhanghaorenen</name></developer>
 	</developers>
 	<scm>
-		<connection/>
-		<developerConnection/>
-		<tag/>
-		<url/>
+		<connection>scm:git:https://github.com/Zhanghaorenen/aiops.git</connection>
+		<developerConnection>scm:git:ssh://git@github.com/Zhanghaorenen/aiops.git</developerConnection>
+		<tag>HEAD</tag>
+		<url>https://github.com/Zhanghaorenen/aiops</url>
 	</scm>
 	<properties>
 		<java.version>17</java.version>

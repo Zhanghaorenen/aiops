@@ -1,6 +1,6 @@
 # RAG LangChain 官方组件重构报告
 
-日期：2026-11-05。实际仓库 D:/work/aiops/backend。开始时 git status 无未提交变更，本次未自动提交或推送。
+日期：2026-11-05。实际仓库 <repository-root>。开始时 git status 无未提交变更，本次未自动提交或推送。
 
 ## 架构与业务边界
 

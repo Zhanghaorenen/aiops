@@ -1,4 +1,8 @@
-# API 设计（V0.1）
+# API 设计与历史增量
+
+本页保留早期接口及后续增量。最新训练接口见 [V0.4 实现说明](v04-training-implementation.md)，权限与签名以 Controller / Service 为准；不要把早期“已登录用户”理解为当前无需工作空间角色。
+
+## V0.1 基础接口
 
 JSON 使用 UTF-8；时间为 ISO-8601 UTC。用户 API 使用 `Authorization: Bearer <JWT>`；Agent API 使用独立 Agent 凭证。错误响应统一为 `{timestamp,status,error,message}`。未认证 401，权限不足 403，资源不存在 404，参数错误 400。
 
@@ -39,4 +43,4 @@ Vite把 `/api/chat` 和 `/api/ai/health` 代理到FastAPI，其他 `/api` 保持
 
 ## v0.2 新接口
 
-工作空间成员/审计、Agent 管理/Token 撤销、告警、Incident/调查任务/报告、GPU 使用登记接口及权限见 [实现报告](aiops-v02-implementation-report.md)。新 USER 接口必须经过 Service 的成员/角色/服务器权限校验；旧指标上报和旧 Agent 心跳已退役为 410。内部调查入口同时要求独立服务密钥和原用户 JWT，不能仅凭服务密钥读取任意服务器。
+工作空间成员/审计、Agent 管理/Token 撤销、告警、Incident/调查任务/报告、GPU 使用登记接口及权限见 [实现报告](archive/aiops-v02-implementation-report.md)。新 USER 接口必须经过 Service 的成员/角色/服务器权限校验；旧指标上报和旧 Agent 心跳已退役为 410。内部调查入口同时要求独立服务密钥和原用户 JWT，不能仅凭服务密钥读取任意服务器。

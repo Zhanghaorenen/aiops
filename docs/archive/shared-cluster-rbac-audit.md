@@ -4,7 +4,7 @@
 
 ## 1. 工作区基线与审计边界
 
-- 实际仓库：`D:/work/aiops/backend`；当前工作区路径 `D:/documents/ChatGPT/aiops` 没有项目源码，本次沿用此前实际开发仓库。
+- 实际仓库：`<repository-root>`；当前工作区路径 `D:/documents/ChatGPT/aiops` 没有项目源码，本次沿用此前实际开发仓库。
 - `git status`：开始时工作区干净；分支 `main`；本地 Git 显示与缓存的 `origin/main` 一致。本次没有 fetch，不据此判断远程实时状态。
 - 最近五条提交：
 

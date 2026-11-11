@@ -1,6 +1,8 @@
 name: Optional Qdrant integration
 on:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   qdrant:
     runs-on: ubuntu-latest

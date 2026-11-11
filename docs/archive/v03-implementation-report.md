@@ -53,7 +53,7 @@ Java 文件除测试外均位于 `src/main/java/com/aiops/backend/`；迁移文�
 - 在三个原采样表增加 `details_json`；`MetricDetails` 负责字段白名单、大小限制和类型过滤。旧行无扩展字段时返回空数据，不另建指标仓库。
 - GPU 使用登记增加 `reservation_kind` 和窗口索引；告警规则增加预设键及唯一索引；Incident 增加来源告警外键及唯一索引。
 - 真实 MySQL 并发联调发现：默认 REPEATABLE READ 下，权限查询建立旧快照，等待服务器锁后仍可能漏看其他事务的新预约。已改用 READ COMMITTED，并在服务器行锁后对冲突记录执行当前读；预设批量应用和告警调查同样明确事务隔离。时间统一到微秒，避免数据库精度使相邻预约误判重叠。
-- 经用户明确授权，已更新服务器现有 `/media/hooasia/data/xz/aiops-agent` 并仅重启 `aiops-collector`。更新前保留源码备份，未替换身份/令牌配置，未操作训练任务。
+- 经用户明确授权，已更新服务器现有 `/opt/aiops-agent` 并仅重启 `aiops-collector`。更新前保留源码备份，未替换身份/令牌配置，未操作训练任务。
 - 当前前端 `http://localhost:5173/`、Spring Boot 8080、FastAPI 8000、MySQL 和 Qdrant 已联通。密钥仍读取私有配置，不写入源码。
 
 ## 测试与实际验证
