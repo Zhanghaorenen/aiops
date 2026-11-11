@@ -43,7 +43,7 @@ python scripts/run.py frontend
 
 默认 Java 8080、FastAPI 8000、Vue 5173。可检查 `/api/health` 与 `/api/ai/health`。FastAPI 无模型配置时仍能启动，但不能完成模型问答。服务在各自终端运行，Ctrl+C 停止；此脚本不启动服务器采集程序。
 
-后端使用 `cluster,operations` 配置，Flyway 自动执行 V1–V13。已有数据库升级前先备份；不要修改已执行迁移。生产部署应配置 TLS、反向代理、持久密钥及受限网络。
+后端使用 `cluster,operations` 配置，Flyway 自动执行 V1–V14。已有数据库升级前先备份；不要修改已执行迁移。生产部署应配置 TLS、反向代理、持久密钥及受限网络。
 
 ## 4. 首次管理员引导
 

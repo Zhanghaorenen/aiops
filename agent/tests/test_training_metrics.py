@@ -46,3 +46,25 @@ class TrainingMetricsTests(unittest.TestCase):
             self.assertEqual(json.loads(request.data)['stepTime'], .5)
             monitor.finish(False)
             self.assertEqual(json.loads(send.call_args.args[0].data), {'state':'FAILED'})
+
+
+    def test_sdk_reports_optional_totals_without_environment_or_command_access(self):
+        with patch('aiops_agent.training_sdk.urlopen') as send:
+            TrainingMonitor('http://platform.test', 'test-only', 2, 3).report(step=10, total_steps=100, total_epochs=5, phase='training')
+            body=json.loads(send.call_args.args[0].data)
+            self.assertEqual(body['totalSteps'],100)
+            self.assertEqual(body['totalEpochs'],5)
+
+    def test_process_uid_and_uss_are_read_without_sensitive_arguments(self):
+        from types import SimpleNamespace
+        process=MagicMock()
+        process.create_time.return_value=1700000000
+        process.uids.return_value=SimpleNamespace(real=1000)
+        process.memory_full_info.return_value=SimpleNamespace(uss=12345)
+        process.children.return_value=[]
+        with patch('psutil.Process',return_value=process):
+            data=ProcessCollector().get_process_info(123)
+        self.assertEqual(data['linuxUid'],1000)
+        self.assertEqual(data['memoryUssBytes'],12345)
+        process.cmdline.assert_not_called()
+        process.environ.assert_not_called()

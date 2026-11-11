@@ -11,6 +11,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from openai import APIError, APITimeoutError
 
 from ..agents.graph_agent import GraphAgent
+from ..agents.session_turn import session_turn
+from ..rag.incident_memory import IncidentMemorySearch
 from ..agents.diagnosis_agent import ToolRoundLimitError
 from ..client.platform_client import PlatformProtocolError
 from ..config import Settings
@@ -54,15 +56,19 @@ async def chat(payload: ChatRequest, request: Request,
             from .knowledge import rag_tool
             agent = GraphAgent(
                 llm,
-                ServerTool(ServerManager(platform)),
+                ServerTool(ServerManager(platform), IncidentMemorySearch(platform, settings, request.app.state.rag_resources).search),
                 GpuTool(GPUManager(platform)),
                 settings.max_rounds, rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
             )
-            answer = await asyncio.wait_for(agent.answer(payload.question, [item.model_dump() for item in payload.history]), timeout=settings.chat_timeout)
-            return ChatResponse(answer=answer)
+            async with session_turn(platform, payload) as turn:
+                if turn.replay is not None:
+                    return ChatResponse(answer=turn.replay)
+                answer = await asyncio.wait_for(agent.answer(payload.question, turn.history), timeout=settings.chat_timeout)
+                await turn.complete(answer)
+                return ChatResponse(answer=answer)
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
-            if status in (401, 403):
+            if status in (401, 403, 404, 409):
                 raise HTTPException(status_code=status, detail="用户凭证无效、已过期或无权访问") from exc
             raise HTTPException(status_code=502, detail="平台服务响应异常") from exc
         except (httpx.TimeoutException, APITimeoutError, TimeoutError) as exc:
@@ -107,16 +113,28 @@ async def chat_stream(payload: ChatRequest, request: Request,
                 stack.push_async_callback(llm.close)
                 from .knowledge import rag_tool
                 agent = GraphAgent(
-                    llm, ServerTool(ServerManager(platform)),
+                    llm, ServerTool(ServerManager(platform), IncidentMemorySearch(platform, settings, request.app.state.rag_resources).search),
                     GpuTool(GPUManager(platform)), settings.max_rounds, rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
                 )
                 import anyio
-                with anyio.fail_after(settings.chat_timeout):
-                    async for event in agent.astream(
-                            payload.question,
-                            [item.model_dump() for item in payload.history]):
-                        yield _sse(event)
-                yield _sse({"type": "done"})
+                async with session_turn(platform, payload) as turn:
+                    if turn.replay is not None:
+                        yield _sse({"type": "token", "text": turn.replay})
+                    else:
+                        answer, sources, resource_results = '', [], []
+                        with anyio.fail_after(settings.chat_timeout):
+                            async for event in agent.astream(payload.question, turn.history):
+                                if event.get('type') == 'token':
+                                    answer += event.get('text', '')
+                                elif event.get('type') == 'sources':
+                                    sources.extend(event.get('results', []))
+                                elif event.get('type') == 'resource_result':
+                                    resource_results.append({'name': event['name'], 'data': event['data']})
+                                elif event.get('type') == 'answer':
+                                    answer = event.get('text', answer)
+                                yield _sse(event)
+                        await turn.complete(answer, sources, resource_results)
+                    yield _sse({"type": "done"})
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 message = ("用户登录凭证无效或已过期" if status == 401 else

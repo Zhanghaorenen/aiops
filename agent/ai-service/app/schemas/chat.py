@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -20,6 +21,8 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     question: str = Field(min_length=1, max_length=4000)
     history: list[HistoryMessage] = Field(default_factory=list, max_length=20)
+    session_id: UUID | None = None
+    request_id: UUID | None = None
 
     @field_validator("question")
     @classmethod
@@ -30,6 +33,8 @@ class ChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def context_budget(self):
+        if self.session_id is not None and (self.request_id is None or self.history):
+            raise ValueError("持久化会话必须提供 request_id，历史记录由服务端加载")
         if sum(len(message.content) for message in self.history) + len(self.question) > 50000:
             raise ValueError("会话上下文过长，请开启新会话")
         return self

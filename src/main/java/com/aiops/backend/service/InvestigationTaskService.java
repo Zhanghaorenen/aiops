@@ -15,8 +15,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class InvestigationTaskService {
   private final JdbcTemplate jdbc;
   private final ClusterPermissionService access;
+  private final UserMemoryService memories;
 
-  public InvestigationTaskService(JdbcTemplate jdbc, ClusterPermissionService access) {
+  public InvestigationTaskService(
+      JdbcTemplate jdbc, ClusterPermissionService access, UserMemoryService memories) {
+    this.memories = memories;
     this.jdbc = jdbc;
     this.access = access;
   }
@@ -124,6 +127,7 @@ public class InvestigationTaskService {
           report,
           now());
     }
+    if (error == null) authorized(run, () -> memories.fromReport(run, report));
     jdbc.update(
         "UPDATE ops_investigation_run SET status=?,finished_at=?,error_code=? WHERE id=?",
         error == null ? "SUCCEEDED" : "FAILED",

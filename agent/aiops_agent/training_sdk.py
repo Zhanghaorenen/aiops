@@ -14,9 +14,9 @@ class TrainingMonitor:
         with urlopen(request, timeout=self.timeout) as response:
             response.read()
 
-    def report(self, *, epoch=None, step=None, step_time=None, samples_per_second=None, phase=None, loss=None):
+    def report(self, *, epoch=None, step=None, step_time=None, samples_per_second=None, phase=None, loss=None, total_steps=None, total_epochs=None):
         self._post('/progress', {'epoch': epoch, 'step': step, 'stepTime': step_time,
-                                'samplesPerSecond': samples_per_second, 'phase': phase, 'loss': loss})
+                                'samplesPerSecond': samples_per_second, 'phase': phase, 'loss': loss, 'totalSteps': total_steps, 'totalEpochs': total_epochs})
 
     def finish(self, success=True):
         self._post('/state', {'state': 'SUCCEEDED' if success else 'FAILED'})

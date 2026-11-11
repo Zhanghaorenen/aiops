@@ -1,5 +1,13 @@
 import { computed, ref } from 'vue'
-import { errorMessage, sendChatStream, type ChatHistoryMessage, type ChatRequest, type ChatResponse, type ChatStreamEvent, type RagSearchResult } from '../api'
+import {
+  errorMessage,
+  sendChatStream,
+  type ChatHistoryMessage,
+  type ChatRequest,
+  type ChatResponse,
+  type ChatStreamEvent,
+  type RagSearchResult,
+} from '../api'
 
 export const QUESTION_LIMIT = 4000
 export const HISTORY_LIMIT = 20
@@ -7,39 +15,67 @@ export const CONTENT_LIMIT = 8000
 export const TOTAL_LIMIT = 50000
 export const characterCount = (value: string) => Array.from(value).length
 
-export function createChatRequest(question: string, messages: ChatHistoryMessage[]): ChatRequest {
+export function createChatRequest(
+  question: string,
+  messages: ChatHistoryMessage[],
+): ChatRequest {
   const trimmed = question.trim()
   if (!trimmed) throw new Error('请输入运维问题')
-  if (characterCount(trimmed) > QUESTION_LIMIT) throw new Error(`问题不能超过 ${QUESTION_LIMIT} 个字符`)
-  const history = messages.slice(-HISTORY_LIMIT).map(item => ({
+  if (characterCount(trimmed) > QUESTION_LIMIT)
+    throw new Error(`问题不能超过 ${QUESTION_LIMIT} 个字符`)
+  const history = messages.slice(-HISTORY_LIMIT).map((item) => ({
     role: item.role,
     content: Array.from(item.content.trim()).slice(0, CONTENT_LIMIT).join(''),
   }))
-  let total = characterCount(trimmed) + history.reduce((sum, item) => sum + characterCount(item.content), 0)
+  let total =
+    characterCount(trimmed) +
+    history.reduce((sum, item) => sum + characterCount(item.content), 0)
   while (total > TOTAL_LIMIT && history.length) {
     // Drop complete oldest turns so retained context always starts with a user.
     const removed = history.splice(0, 2)
-    total -= removed.reduce((sum, item) => sum + characterCount(item.content), 0)
+    total -= removed.reduce(
+      (sum, item) => sum + characterCount(item.content),
+      0,
+    )
   }
   return { question: trimmed, history }
 }
 
 // Only completed turns enter history. Request identity isolates canceled or replaced sessions.
 export function useAiChat(
-  access: () => { demo: boolean; token: string | null },
-  transport: (request: ChatRequest, signal?: AbortSignal, onEvent?: (event: ChatStreamEvent) => void) => Promise<ChatResponse> = sendChatStream,
+  access: () => {
+    demo: boolean
+    token: string | null
+    sessionId?: string | null
+  },
+  transport: (
+    request: ChatRequest,
+    signal?: AbortSignal,
+    onEvent?: (event: ChatStreamEvent) => void,
+  ) => Promise<ChatResponse> = sendChatStream,
 ) {
   const input = ref('')
-  const messages = ref<(ChatHistoryMessage & { sources?: RagSearchResult[] })[]>([])
+  const messages = ref<
+    (ChatHistoryMessage & {
+      sources?: RagSearchResult[]
+      resourceResults?: { name: string; data: Record<string, any> }[]
+    })[]
+  >([])
   const sending = ref(false)
   const error = ref('')
   const notice = ref('')
   const pendingQuestion = ref('')
   const streamingAnswer = ref('')
   const toolActivity = ref('')
+  const resourceResults = ref<{ name: string; data: Record<string, any> }[]>([])
   let active: AbortController | null = null
   let failedRequest: ChatRequest | null = null
-  const canRetry = computed(() => !sending.value && !!failedRequest && input.value.trim() === failedRequest.question)
+  const canRetry = computed(
+    () =>
+      !sending.value &&
+      !!failedRequest &&
+      input.value.trim() === failedRequest.question,
+  )
 
   function cancel() {
     if (!active) return
@@ -62,6 +98,7 @@ export function useAiChat(
     pendingQuestion.value = ''
     streamingAnswer.value = ''
     toolActivity.value = ''
+    resourceResults.value = []
     failedRequest = null
   }
 
@@ -69,12 +106,29 @@ export function useAiChat(
     if (sending.value) return
     const identity = access()
     if (identity.demo || !identity.token) {
-      error.value = identity.demo ? '演示环境不支持真实 AI 查询，请登录后使用' : '请先登录后使用 AI 查询'
+      error.value = identity.demo
+        ? '演示环境不支持真实 AI 查询，请登录后使用'
+        : '请先登录后使用 AI 查询'
       return
     }
     let request: ChatRequest
-    try { request = retry && canRetry.value && failedRequest ? failedRequest : createChatRequest(input.value, messages.value) }
-    catch (err) { error.value = errorMessage(err); return }
+    try {
+      request =
+        retry && canRetry.value && failedRequest
+          ? failedRequest
+          : createChatRequest(input.value, messages.value)
+    } catch (err) {
+      error.value = errorMessage(err)
+      return
+    }
+    if (identity.sessionId) {
+      request = {
+        ...request,
+        history: [],
+        session_id: identity.sessionId,
+        request_id: request.request_id ?? crypto.randomUUID(),
+      }
+    }
     const controller = new AbortController()
     active = controller
     sending.value = true
@@ -86,33 +140,65 @@ export function useAiChat(
     toolActivity.value = ''
     input.value = ''
     const sources: RagSearchResult[] = []
+    resourceResults.value = []
     try {
       const response = await transport(request, controller.signal, (event) => {
         if (active !== controller || controller.signal.aborted) return
-        if (event.type === 'sources') {
-          for (const hit of event.results) if (!sources.some(s => s.chunk_id === hit.chunk_id)) sources.push(hit)
+        if (event.type === 'resource_result') {
+          resourceResults.value.push({ name: event.name, data: event.data })
+        } else if (event.type === 'sources') {
+          for (const hit of event.results)
+            if (!sources.some((s) => s.chunk_id === hit.chunk_id))
+              sources.push(hit)
         } else if (event.type === 'token') {
           streamingAnswer.value += event.text
           toolActivity.value = ''
         } else if (event.type === 'tool_start') {
-          const labels: Record<string, string> = { search_knowledge: '检索运维知识库',
-            list_servers: '查询服务器列表', get_server_status: '查询服务器状态',
-            get_server_resource_usage: '查询主机指标', list_gpus: '查询 GPU 列表',
-            get_gpu_status: '查询 GPU 状态', get_gpu_overview: '汇总 GPU 指标',
-            get_gpu_processes: '查询 GPU 进程', get_gpu_history: '查询 GPU 历史',
-            analyze_gpu_health: '分析 GPU 健康度', compare_gpu_load: '比较 GPU 负载',
+          const labels: Record<string, string> = {
+            search_knowledge: '检索运维知识库',
+            list_servers: '查询服务器列表',
+            get_server_status: '查询服务器状态',
+            get_server_resource_usage: '查询主机指标',
+            list_gpus: '查询 GPU 列表',
+            get_gpu_status: '查询 GPU 状态',
+            get_gpu_overview: '汇总 GPU 指标',
+            get_gpu_processes: '查询 GPU 进程',
+            get_gpu_history: '查询 GPU 历史',
+            analyze_gpu_health: '分析 GPU 健康度',
+            compare_gpu_load: '比较 GPU 负载',
             recommend_gpu_placement: '生成 GPU 调度建议',
+            get_active_workloads: '查询运行任务',
+            get_workload_profile: '读取历史资源画像',
+            estimate_available_capacity: '计算资源预算',
+            predict_workload_completion: '预测完成时间',
+            search_similar_incidents: '检索已验证经验',
+            get_private_memories: '读取已确认的私人记忆',
           }
           toolActivity.value = `${labels[event.name] ?? '执行只读查询'}…`
         } else if (event.type === 'tool_end') {
-          toolActivity.value = event.ok === false ? '查询未成功，正在整理结果…' : '数据已取得，正在分析…'
+          toolActivity.value =
+            event.ok === false
+              ? '查询未成功，正在整理结果…'
+              : '数据已取得，正在分析…'
         }
       })
       if (active !== controller || controller.signal.aborted) return
       const current = access()
-      if (current.demo || current.token !== identity.token) { reset(); return }
-      if (typeof response.answer !== 'string' || !response.answer.trim()) throw new Error('AI 服务返回了无效回答，请重试')
-      messages.value.push({ role: 'user', content: request.question }, { role: 'assistant', content: response.answer, sources })
+      if (current.demo || current.token !== identity.token) {
+        reset()
+        return
+      }
+      if (typeof response.answer !== 'string' || !response.answer.trim())
+        throw new Error('AI 服务返回了无效回答，请重试')
+      messages.value.push(
+        { role: 'user', content: request.question },
+        {
+          role: 'assistant',
+          content: response.answer,
+          sources,
+          resourceResults: [...resourceResults.value],
+        },
+      )
       pendingQuestion.value = ''
       failedRequest = null
       streamingAnswer.value = ''
@@ -124,9 +210,26 @@ export function useAiChat(
       toolActivity.value = ''
       if (!controller.signal.aborted) error.value = errorMessage(err)
     } finally {
-      if (active === controller) { active = null; sending.value = false }
+      if (active === controller) {
+        active = null
+        sending.value = false
+      }
     }
   }
 
-  return { input, messages, sending, error, notice, pendingQuestion, streamingAnswer, toolActivity, canRetry, send, cancel, reset }
+  return {
+    input,
+    messages,
+    sending,
+    error,
+    notice,
+    pendingQuestion,
+    streamingAnswer,
+    toolActivity,
+    resourceResults,
+    canRetry,
+    send,
+    cancel,
+    reset,
+  }
 }

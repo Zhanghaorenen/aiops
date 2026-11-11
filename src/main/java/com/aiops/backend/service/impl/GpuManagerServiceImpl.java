@@ -26,6 +26,7 @@ public class GpuManagerServiceImpl implements GpuManagerService {
   private static final int MAX_HISTORY_LIMIT = 1440;
 
   private final NodeRepository nodes;
+  private final org.springframework.jdbc.core.JdbcTemplate jdbc;
   private final com.aiops.backend.service.ClusterPermissionService access;
   private final GpuSnapshotRepository snapshots;
   private final GpuSampleRepository samples;
@@ -36,7 +37,9 @@ public class GpuManagerServiceImpl implements GpuManagerService {
       GpuSnapshotRepository snapshots,
       GpuSampleRepository samples,
       GpuProcessSampleRepository processes,
-      com.aiops.backend.service.ClusterPermissionService access) {
+      com.aiops.backend.service.ClusterPermissionService access,
+      org.springframework.jdbc.core.JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
     this.access = access;
     this.nodes = nodes;
     this.snapshots = snapshots;
@@ -122,6 +125,20 @@ public class GpuManagerServiceImpl implements GpuManagerService {
   @Override
   public List<Map<String, Object>> getGpuProcesses(Long serverId) {
     GpuSnapshotEntity snapshot = latestSnapshot(serverId);
+    var node = access.requireNode(serverId, com.aiops.backend.security.ClusterPermission.GPU_VIEW);
+    boolean manager =
+        "ADMIN"
+            .equals(
+                access
+                    .require(
+                        node.getClusterId(), com.aiops.backend.security.ClusterPermission.GPU_VIEW)
+                    .getRole());
+    var identities =
+        jdbc.queryForList(
+            "SELECT linux_username,linux_uid FROM ops_training_linux_identity WHERE server_id=? AND"
+                + " user_id=?",
+            serverId,
+            access.currentUser().getId());
     List<Map<String, Object>> result = new ArrayList<>();
     for (GpuProcessSampleEntity process : processes.findBySnapshotId(snapshot.getId())) {
       Map<String, Object> row = new LinkedHashMap<>();
@@ -136,6 +153,17 @@ public class GpuManagerServiceImpl implements GpuManagerService {
       row.put("collectedAt", process.getCollectedAt());
       row.put("receivedAt", process.getReceivedAt());
       row.putAll(process.getDetails());
+      boolean owner =
+          identities.size() == 1
+              && java.util.Objects.equals(
+                  identities.get(0).get("linux_username"), process.getUsername())
+              && (identities.get(0).get("linux_uid") == null
+                  || (row.get("linuxUid") instanceof Number uid
+                      && ((Number) identities.get(0).get("linux_uid")).longValue()
+                          == uid.longValue()));
+      if (!manager && !owner)
+        for (String key : List.of("executablePath", "workingDirectory", "processTree", "linuxUid"))
+          row.remove(key);
       result.add(row);
     }
     return result;

@@ -10,7 +10,7 @@ class ProcessCollector:
         self._io = {}
         self._exits = []
 
-    def get_process_info(self, pid):
+    def get_process_info(self, pid, include_tree=True):
         try:
             current = psutil.Process(pid)
             identity = (pid, current.create_time())
@@ -34,6 +34,11 @@ class ProcessCollector:
                              ("parentPid", process.ppid), ("numThreads", process.num_threads), ("memoryRssBytes", lambda: process.memory_info().rss),
                              ("startedAt", lambda: datetime.fromtimestamp(identity[1], timezone.utc).isoformat())]:
             read(name, getter)
+        if hasattr(process, 'uids'):
+            read("linuxUid", lambda: process.uids().real)
+        if hasattr(process, 'memory_full_info'):
+            # USS 不重复计算共享页；无法读取时仍保留 RSS 并由后端标注估计。
+            read("memoryUssBytes", lambda: process.memory_full_info().uss)
         read("cpuPercent", lambda: process.cpu_percent(interval=None))
         if first:
             output["cpuPercent"] = None
@@ -48,20 +53,19 @@ class ProcessCollector:
             if len(self._io)>2048: self._io = {identity:self._io[identity]}
         except (psutil.Error, OSError):
             pass
-        try:
-            children = process.children(recursive=True)
-            tree = []
-            for child in children[:128]:
-                try:
-                    tree.append({'pid':child.pid,'parentPid':child.ppid(),'name':child.name(),
-                                 'startedAt':datetime.fromtimestamp(child.create_time(),timezone.utc).isoformat(),
-                                 'memoryRssBytes':child.memory_info().rss})
-                except (psutil.Error,OSError):
-                    continue
-            output['processTree'] = tree
-            output['processTreeTruncated'] = len(children)>128
-        except (psutil.Error,OSError):
-            pass
+        if include_tree:
+            try:
+                children = process.children(recursive=True)
+                tree = []
+                for child in children[:128]:
+                    info = self.get_process_info(child.pid, include_tree=False)
+                    if info:
+                        # 子进程只上报资源和身份，路径不进入归组数据。
+                        tree.append({key: value for key, value in info.items() if key not in {'executablePath', 'workingDirectory'}})
+                output['processTree'] = tree
+                output['processTreeTruncated'] = len(children) > 128
+            except (psutil.Error, OSError):
+                pass
         return output
 
     def collect_exits(self):

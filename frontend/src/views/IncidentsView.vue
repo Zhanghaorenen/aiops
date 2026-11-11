@@ -198,6 +198,13 @@ const columns = [
         </ul>
         <h3>实际检索来源</h3>
         <p
+          v-for="historical in report(item.report_json).historical_cases"
+          :key="historical.case_id"
+        >
+          历史经验：{{ historical.title }} · {{ historical.case_id }} ·
+          {{ historical.status }} · v{{ historical.version }}
+        </p>
+        <p
           v-for="source in report(item.report_json).references"
           :key="source.chunk_id"
         >

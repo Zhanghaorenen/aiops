@@ -199,3 +199,17 @@ async def download_document(
         return FileResponse(
             path, filename=doc["originalFilename"], media_type=doc["mimeType"]
         )
+
+
+from pydantic import BaseModel, Field
+
+class IncidentQuery(BaseModel):
+    server_id: int = Field(gt=0)
+    query: str = Field(min_length=1, max_length=2000)
+
+@router.post('/incident-cases/search')
+async def search_incident_cases(payload: IncidentQuery, request: Request,
+                                credentials: HTTPAuthorizationCredentials | None = Depends(auth_scheme)):
+    from ..rag.incident_memory import IncidentMemorySearch
+    async with session(request, credentials) as (platform, settings):
+        return await IncidentMemorySearch(platform, settings, request.app.state.rag_resources).search(payload.server_id, payload.query)

@@ -21,6 +21,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function login(values: { username: string; password: string }) {
     const { data } = await api.post<LoginResponse>('/api/auth/login', values)
+    servers.value = []
+    role.value = ''
+    enrollment.value = null
     localStorage.setItem(TOKEN_KEY, data.accessToken)
     token.value = data.accessToken
     demo.value = false

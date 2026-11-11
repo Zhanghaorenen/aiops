@@ -14,10 +14,7 @@ public class TrainingJobController {
   private final TrainingJobService jobs;
   private final TrainingAnalysisService analysis;
 
-  public TrainingJobController(
-    TrainingJobService jobs,
-    TrainingAnalysisService analysis
-  ) {
+  public TrainingJobController(TrainingJobService jobs, TrainingAnalysisService analysis) {
     this.jobs = jobs;
     this.analysis = analysis;
   }
@@ -29,9 +26,7 @@ public class TrainingJobController {
 
   @PostMapping("/jobs")
   public Object create(
-    @PathVariable long serverId,
-    @Valid @RequestBody TrainingJobService.Request r
-  ) {
+      @PathVariable long serverId, @Valid @RequestBody TrainingJobService.Request r) {
     return jobs.save(serverId, null, r);
   }
 
@@ -42,10 +37,9 @@ public class TrainingJobController {
 
   @PutMapping("/jobs/{id}")
   public Object update(
-    @PathVariable long serverId,
-    @PathVariable long id,
-    @Valid @RequestBody TrainingJobService.Request r
-  ) {
+      @PathVariable long serverId,
+      @PathVariable long id,
+      @Valid @RequestBody TrainingJobService.Request r) {
     return jobs.save(serverId, id, r);
   }
 
@@ -55,17 +49,11 @@ public class TrainingJobController {
   }
 
   public record Transition(
-    @NotNull @Pattern(
-      regexp = "STARTING|SUCCEEDED|FAILED|CANCELLED"
-    ) String state
-  ) {}
+      @NotNull @Pattern(regexp = "STARTING|SUCCEEDED|FAILED|CANCELLED") String state) {}
 
   @PostMapping("/jobs/{id}/state")
   public Object state(
-    @PathVariable long serverId,
-    @PathVariable long id,
-    @Valid @RequestBody Transition r
-  ) {
+      @PathVariable long serverId, @PathVariable long id, @Valid @RequestBody Transition r) {
     return jobs.transition(serverId, id, r.state());
   }
 
@@ -73,19 +61,15 @@ public class TrainingJobController {
 
   @PostMapping("/jobs/{id}/process")
   public Object link(
-    @PathVariable long serverId,
-    @PathVariable long id,
-    @Valid @RequestBody Link r
-  ) {
+      @PathVariable long serverId, @PathVariable long id, @Valid @RequestBody Link r) {
     return jobs.link(serverId, id, r.pid(), r.startedAt());
   }
 
   @PostMapping("/jobs/{id}/progress")
   public void progress(
-    @PathVariable long serverId,
-    @PathVariable long id,
-    @Valid @RequestBody TrainingJobService.Progress p
-  ) {
+      @PathVariable long serverId,
+      @PathVariable long id,
+      @Valid @RequestBody TrainingJobService.Progress p) {
     jobs.progress(serverId, id, p);
   }
 
@@ -100,23 +84,15 @@ public class TrainingJobController {
   }
 
   @PutMapping("/policy")
-  public void policy(
-    @PathVariable long serverId,
-    @Valid @RequestBody TrainingJobService.Policy p
-  ) {
+  public void policy(@PathVariable long serverId, @Valid @RequestBody TrainingJobService.Policy p) {
     jobs.policy(serverId, p);
   }
 
   public record Identity(
-    @Positive long userId,
-    @NotBlank String linuxUsername
-  ) {}
+      @Positive long userId, @NotBlank String linuxUsername, @PositiveOrZero Long linuxUid) {}
 
   @PutMapping("/identity")
-  public void identity(
-    @PathVariable long serverId,
-    @Valid @RequestBody Identity r
-  ) {
-    jobs.identity(serverId, r.userId(), r.linuxUsername());
+  public void identity(@PathVariable long serverId, @Valid @RequestBody Identity r) {
+    jobs.identity(serverId, r.userId(), r.linuxUsername(), r.linuxUid());
   }
 }

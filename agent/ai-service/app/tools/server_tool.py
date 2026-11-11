@@ -6,8 +6,9 @@ from langchain.tools import tool
 
 
 class ServerTool:
-    def __init__(self, server_manager: ServerManager):
+    def __init__(self, server_manager: ServerManager, experience_search=None):
         self.server_manager = server_manager
+        self.experience_search = experience_search
 
     # Keep ordinary Python methods for existing DiagnosisAgent callers.
     async def list_servers(self) -> list[dict]:
@@ -55,7 +56,46 @@ class ServerTool:
                 'otherJobs': report.get('otherJobs', [])[:10],
             }
 
-        return [list_servers, get_server_status, get_server_resource_usage, list_training_jobs, analyze_training_contention]
+        @tool
+        async def get_active_workloads(server_id: int) -> list[dict]:
+            """查询服务器活跃运行任务和新鲜度；他人任务仅返回授权资源摘要。"""
+            rows = await self.server_manager.client.get_active_workloads(server_id)
+            # 模型只需要资源和身份标识，不传私人路径、Linux 用户或配置。
+            return [{k: v for k, v in row.items() if k != 'run'} | {
+                'confirmed': row.get('run', {}).get('confirmed'),
+                'job_id': row.get('run', {}).get('job_id'),
+            } for row in rows]
+
+        @tool
+        async def get_workload_profile(server_id: int, run_id: str) -> dict:
+            """读取有权访问的同配置任务历史画像，含 P50/P95/峰值、样本量和可信度。"""
+            return await self.server_manager.client.get_workload_profile(server_id, run_id)
+
+        @tool
+        async def estimate_available_capacity(server_id: int, gpu_index: int = 0, vram_mb: float = 0, ram_mb: float = 0, run_id: str | None = None) -> dict:
+            """按实时采样、未启动承诺和安全预留计算资源预算。容量单位 MiB，10GiB=10240MiB。run_id 可辅助匹配历史画像；不预约或启动任务。"""
+            return await self.server_manager.client.estimate_available_capacity(server_id, gpu_index, vram_mb, ram_mb, run_id)
+
+        @tool
+        async def predict_workload_completion(server_id: int, run_id: str) -> dict:
+            """按近期进度或同配置成功历史估算结束范围；样本不足不返回精确时间。预计结束不等于已释放资源。"""
+            return await self.server_manager.client.predict_workload_completion(server_id, run_id)
+
+        @tool
+        async def search_similar_incidents(server_id: int, query: str) -> dict:
+            """检索当前用户获准读取且已验证的历史故障案例；历史经验不是当前根因。"""
+            if not self.experience_search:
+                return {'results': [], 'missingEvidence': ['故障经验向量检索尚未配置']}
+            return await self.experience_search(server_id, query)
+
+        @tool
+        async def get_private_memories() -> list[dict]:
+            """仅在用户要求回顾偏好或已确认经验时查询本人的长期记忆；记忆不代表实时资源。"""
+            return await self.server_manager.client.get_private_memories()
+
+        return [list_servers, get_server_status, get_server_resource_usage, list_training_jobs, analyze_training_contention,
+                get_active_workloads, get_workload_profile, estimate_available_capacity, predict_workload_completion,
+                search_similar_incidents, get_private_memories]
 
 
 # Preserve the lowercase public alias used by existing imports.

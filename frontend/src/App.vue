@@ -25,6 +25,8 @@ const store = useWorkspaceStore()
 const route = useRoute()
 const router = useRouter()
 const mobileMenuOpen = ref(false)
+const viewIdentity = ref(0)
+watch([() => store.token, () => store.demo], () => { viewIdentity.value++ }, { flush: 'sync' })
 const page = computed(() => String(route.meta.section || ''))
 const theme = {
   algorithm: antTheme.darkAlgorithm,
@@ -195,6 +197,7 @@ watch(
           <a-menu-item key="ai"
             ><template #icon><RobotOutlined /></template>AI 助手</a-menu-item
           >
+          <a-menu-item key="personal"><template #icon><UserOutlined /></template>个人记录</a-menu-item>
           <a-menu-item key="knowledge"
             ><template #icon><ExperimentOutlined /></template
             >知识库</a-menu-item
@@ -289,7 +292,7 @@ watch(
               ><a-button @click="store.refresh">重试</a-button></template
             ></a-alert
           >
-          <RouterView />
+          <RouterView :key="viewIdentity" />
           <footer class="content-footer">
             <span
               >{{

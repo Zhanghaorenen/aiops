@@ -221,6 +221,8 @@ export interface ChatHistoryMessage {
 export interface ChatRequest {
   question: string
   history: ChatHistoryMessage[]
+  session_id?: string
+  request_id?: string
 }
 
 // AI 聊天响应
@@ -232,6 +234,7 @@ export type ChatStreamEvent =
   | { type: 'token'; text: string }
   | { type: 'tool_start' | 'tool_end'; name: string; ok?: boolean }
   | { type: 'sources'; results: RagSearchResult[] }
+  | { type: 'resource_result'; name: string; data: Record<string, any> }
   | { type: 'done' }
   | { type: 'error'; status?: number; message: string }
 
@@ -336,3 +339,13 @@ export async function sendChatStream(
 export interface KnowledgeBase {id:number;name:string;description:string|null;status:string}
 export interface KnowledgeDocument {id:number;kbId:number;originalFilename:string;mimeType:string;status:string;chunkCount:number|null;createdAt:string;errorCode:string|null}
 export interface RagSearchResult {chunk_id:string;document_id:number;knowledge_base_id:number;document_title:string;page:number|null;section:string|null;content:string;score:number}
+
+export interface AiSession { id: string; title: string; status: string; updated_at: string }
+export interface SavedChatMessage extends ChatHistoryMessage { id: number; status: string; metadata_json?: string }
+export const chatSessions = {
+  list: () => api.get<AiSession[]>('/api/ai/sessions').then(r => r.data),
+  create: (title: string) => api.post<AiSession>('/api/ai/sessions', { title }).then(r => r.data),
+  update: (id: string, title: string, status = 'ACTIVE') => api.patch(`/api/ai/sessions/${id}`, { title, status }),
+  remove: (id: string) => api.delete(`/api/ai/sessions/${id}`),
+  messages: (id: string, before?: number) => api.get<SavedChatMessage[]>(`/api/ai/sessions/${id}/messages`, { params: { before, limit: 100 } }).then(r => r.data),
+}

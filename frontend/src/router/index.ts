@@ -98,6 +98,7 @@ export const router = createRouter({
       component: () => import('../views/AlertsView.vue'),
       meta: { title: '告警中心', section: 'alerts' },
     },
+    { path: '/personal', component: () => import('../views/PersonalView.vue'), meta: { title: '个人记录', section: 'personal' } },
     { path: '/incidents', redirect: '/alerts?tab=incidents' },
     {
       path: '/access',

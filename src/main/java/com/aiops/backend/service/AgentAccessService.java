@@ -47,6 +47,7 @@ public class AgentAccessService {
   private final GpuProcessSampleRepository gpuProcesses;
   private final ClusterPermissionService access;
   private final com.aiops.backend.repository.ClusterRepository clusters;
+  private final WorkloadService workloads;
   private final SecureRandom random = new SecureRandom();
 
   public AgentAccessService(
@@ -58,7 +59,9 @@ public class AgentAccessService {
       GpuSampleRepository gpuSamples,
       GpuProcessSampleRepository gpuProcesses,
       ClusterPermissionService access,
-      com.aiops.backend.repository.ClusterRepository clusters) {
+      com.aiops.backend.repository.ClusterRepository clusters,
+      WorkloadService workloads) {
+    this.workloads = workloads;
     this.access = access;
     this.clusters = clusters;
     this.tokens = tokens;
@@ -204,6 +207,7 @@ public class AgentAccessService {
         com.aiops.backend.persistence.MetricDetails.encode(request.details(), "HOST"));
     metrics.save(saved);
     recordGpuSnapshot(agent, request, collectedAt, now);
+    workloads.observe(agent.getNodeId());
     return saved;
   }
 

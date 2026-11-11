@@ -49,6 +49,44 @@ class PlatformClient:
     async def get_current_user(self) -> dict:
         return await self._get("/api/auth/me", dict)
 
+    async def begin_chat_turn(self, session_id, request_id, question):
+        response = await self.client.post(f"api/ai/sessions/{session_id}/turns", json={"requestId": str(request_id), "question": question})
+        response.raise_for_status()
+        return response.json()
+
+    async def finish_chat_turn(self, session_id, request_id, status, answer=None, metadata=None, lease=None):
+        response = await self.client.post(f"api/ai/sessions/{session_id}/turns/{request_id}/finish",
+                                          json={"status": status, "answer": answer, "metadata": metadata, "lease": lease})
+        response.raise_for_status()
+
+    async def get_active_workloads(self, server_id: int):
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/workloads", list)
+
+    async def get_workload_profile(self, server_id: int, run_id: str):
+        from uuid import UUID
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/workloads/{UUID(run_id)}/profile", dict)
+
+    async def estimate_available_capacity(self, server_id: int, gpu_index: int = 0, vram_mb: float = 0, ram_mb: float = 0, run_id: str | None = None):
+        params = {"gpuIndex": self._gpu_id(gpu_index), "vramMb": vram_mb, "ramMb": ram_mb}
+        if run_id:
+            from uuid import UUID
+            params['runId'] = str(UUID(run_id))
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/capacity", dict, params)
+
+    async def predict_workload_completion(self, server_id: int, run_id: str):
+        from uuid import UUID
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/workloads/{UUID(run_id)}/prediction", dict)
+
+    async def get_incident_cases(self, server_id: int, verified=True):
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/incident-cases", list, {"verified": str(verified).lower()})
+
+    async def get_incident_case(self, server_id: int, case_id: str):
+        from uuid import UUID
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/incident-cases/{UUID(case_id)}", dict)
+
+    async def get_private_memories(self):
+        return await self._get('/api/ai/memories', list)
+
     async def get_server_list(self) -> list[dict]:
         data = await self._get("/api/servers", list)
         if any(not isinstance(item, dict) for item in data):

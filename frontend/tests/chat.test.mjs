@@ -562,3 +562,35 @@ test('workspace management controls are rendered only for an ADMIN', async () =>
     assert.equal(html.includes('data-member-editor'),role==='ADMIN')
   }
 })
+
+
+test('persistent chat sends only session identity and retains request id for retry', async () => {
+  const sessionId='35c6cdd4-e5d8-450d-9eb5-e18422110256'
+  let saved, count=0
+  const instance=chat.useAiChat(()=>({...signedIn(),sessionId}),async request=>{
+    if(!count++){saved=request;throw new Error('temporary')}
+    assert.equal(request.request_id,saved.request_id)
+    return {answer:'恢复成功'}
+  })
+  instance.messages.value=[{role:'user',content:'old'},{role:'assistant',content:'old answer'}]
+  instance.input.value='继续'
+  await instance.send()
+  assert.equal(saved.session_id,sessionId)
+  assert.deepEqual(saved.history,[])
+  assert.ok(saved.request_id)
+  await instance.send(true)
+  assert.equal(instance.messages.value.at(-1).content,'恢复成功')
+})
+
+test('structured prediction cards stay scoped to the current chat and reset on logout', async () => {
+  const instance=chat.useAiChat(signedIn,async(request,signal,emit)=>{
+    emit({type:'resource_result',name:'predict_workload_completion',data:{confidence:'LOW_CONFIDENCE',reason:'不足'}})
+    return {answer:'历史不足'}
+  })
+  instance.input.value='什么时候结束'
+  await instance.send()
+  assert.equal(instance.messages.value[1].resourceResults[0].data.confidence,'LOW_CONFIDENCE')
+  instance.reset()
+  assert.deepEqual(instance.messages.value,[])
+  assert.deepEqual(instance.resourceResults.value,[])
+})

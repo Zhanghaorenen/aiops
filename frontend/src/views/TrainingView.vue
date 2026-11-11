@@ -4,6 +4,7 @@ import { api, errorMessage } from '../api'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatTime } from '../utils/format'
 import TrendChart from '../components/TrendChart.vue'
+import WorkloadPanel from '../components/WorkloadPanel.vue'
 const store = useWorkspaceStore(),
   server = ref<number>(),
   items = ref<any[]>([]),
@@ -245,6 +246,7 @@ function processTree() {
   </div>
   <a-alert v-if="error" :message="error" type="error" show-icon />
   <a-alert v-if="store.demo" message="训练任务需要登录真实环境" type="info" />
+  <WorkloadPanel :server-id="server" />
   <a-card
     v-if="store.role !== 'VIEWER' && !store.demo"
     :title="editing ? '编辑未启动任务' : '登记训练任务'"
