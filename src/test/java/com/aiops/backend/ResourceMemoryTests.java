@@ -590,6 +590,26 @@ class ResourceMemoryTests extends ClusterTestSupport {
   }
 
   @Test
+  void uidBecomingAvailableCreatesSeparateRunAndPreservesUnknownHistory() {
+    var node=node();
+    Instant now=Instant.now();
+    String started=now.minusSeconds(100).toString();
+    sample(node,now.minusSeconds(30),started,true,false);
+    removeDerivedRuns(node.nodeId());
+    testJdbc.update("UPDATE metric_gpu_process_sample SET details_json=? WHERE node_id=?",
+        "{\"startedAt\":\""+started+"\",\"cpuPercent\":20,\"memoryRssBytes\":1024}",node.nodeId());
+    String legacy=workloads.discoverAndList(node.nodeId(),true).get(0).get("runId").toString();
+    sample(node,now,started,true,false);
+    var rows=workloads.discoverAndList(node.nodeId(),true);
+    assertEquals(2,rows.size());
+    assertNull(testJdbc.queryForObject("SELECT linux_uid FROM ops_workload_run WHERE id=?",Long.class,legacy));
+    var known=rows.stream().filter(r->!legacy.equals(r.get("runId"))).findFirst().orElseThrow();
+    assertEquals("TRACKED",known.get("identityStatus"));
+    assertEquals(1000L,testJdbc.queryForObject("SELECT linux_uid FROM ops_workload_run WHERE id=?",Long.class,known.get("runId")));
+    assertEquals(1,testJdbc.queryForObject("SELECT COUNT(*) FROM ops_workload_sample WHERE run_id=?",Integer.class,legacy));
+  }
+
+  @Test
   void missingStartTimeRemainsSnapshotOnlyButStillSupportsAnalysis() {
     var node = node();
     Instant now = Instant.now();

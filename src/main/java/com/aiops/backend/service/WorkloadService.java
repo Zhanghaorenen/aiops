@@ -119,12 +119,12 @@ public class WorkloadService {
       var rows =
           jdbc.queryForList(
               "SELECT * FROM ops_workload_run WHERE server_id=? AND root_pid=? AND"
-                  + " process_started_at=?",
+                  + " process_started_at=? AND (linux_uid=? OR (linux_uid IS NULL AND ? IS NULL))",
               server,
               pid,
-              started);
-      if (!rows.isEmpty() && !Objects.equals(ProcessGroups.integer(rows.get(0).get("linux_uid")),ProcessGroups.integer(d.get("linuxUid"))))
-        continue; // Legacy unique key lacks UID: never append another identity's samples to that run.
+              started,
+              d.get("linuxUid"),
+              d.get("linuxUid"));
       String id = rows.isEmpty() ? UUID.randomUUID().toString() : rows.get(0).get("id").toString();
       active.add(id);
       // 运行归属一旦确定就不随管理员后续改映射而转给另一用户。

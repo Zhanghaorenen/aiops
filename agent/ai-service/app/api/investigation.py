@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import secrets
 from contextlib import AsyncExitStack
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -83,6 +84,8 @@ async def investigate(
         except TimeoutError as exc:
             raise HTTPException(504, "调查超时") from exc
         except Exception as exc:
+            logging.getLogger(__name__).warning("Investigation failed incident=%s server=%s type=%s",
+                payload.incident_id,payload.server_id,type(exc).__name__)
             raise HTTPException(
                 502, "调查未完成，请检查模型配置、监控证据和检索服务"
             ) from exc

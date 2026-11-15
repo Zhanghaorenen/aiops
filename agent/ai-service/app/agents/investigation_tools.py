@@ -1,7 +1,7 @@
 """Bounded read-only probe registry. The model cannot supply a server, URL, SQL or shell."""
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Literal, Annotated, Union
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -36,6 +36,28 @@ class Probe(BaseModel):
 
     def key(self):
         return (self.tool, self.gpu_index, self.job_id, self.run_id)
+
+class Action(BaseModel):
+    model_config=ConfigDict(extra="forbid",strict=True)
+    purpose: str=Field(default="补充证据",max_length=300)
+
+class GeneralAction(Action):
+    tool: Literal["host","status","gpu","gpu_processes","host_history","workloads",
+                  "runtime_contention","knowledge","historical_cases"]
+
+class GpuHistoryAction(Action):
+    tool: Literal["gpu_history"]
+    gpu_index: int=Field(ge=0,description="只能使用已发现的GPU编号")
+
+class TrainingAction(Action):
+    tool: Literal["training_analysis"]
+    job_id: int=Field(gt=0,description="只能使用已发现的任务ID")
+
+class WorkloadAction(Action):
+    tool: Literal["workload_analysis"]
+    run_id: str=Field(max_length=36,description="只能使用已发现的运行UUID")
+
+PlannedAction=Annotated[Union[GeneralAction,GpuHistoryAction,TrainingAction,WorkloadAction],Field(discriminator="tool")]
 
 def bounded(value, depth=0):
     if depth>9:
@@ -72,16 +94,31 @@ class InvestigationTools:
         if run_id:
             self.runs.add(str(UUID(run_id)))
 
-    async def execute(self, probe, knowledge, cases):
-        tool, server = probe.tool, self.server
+    def validate_scope(self, probe):
+        tool=probe.tool
         if probe.gpu_index is not None and (tool!="gpu_history" or probe.gpu_index not in self.gpus):
             raise ValueError("GPU_OUTSIDE_DISCOVERED_SCOPE")
         if probe.job_id is not None and (tool!="training_analysis" or probe.job_id not in self.jobs):
             raise ValueError("JOB_OUTSIDE_DISCOVERED_SCOPE")
         if probe.run_id is not None and (tool!="workload_analysis" or str(UUID(probe.run_id)) not in self.runs):
             raise ValueError("RUN_OUTSIDE_DISCOVERED_SCOPE")
+    async def execute(self, probe, knowledge, cases):
+        self.validate_scope(probe)
+        tool, server = probe.tool, self.server
         start, end = (self.anchor-timedelta(minutes=30)).isoformat(), self.anchor.isoformat()
-        if tool=="host": return await self.host.get_server_resource_usage(server)
+        if tool=="host":
+            data=await self.host.get_server_resource_usage(server)
+            details=data.get("host_details",data.get("details",{}))
+            cores=details.get("perCorePercent",[])
+            if cores:
+                data["cpuLogicalCount"]=len(cores)
+                load=details.get("load1")
+                if isinstance(load,(int,float)): data["load1PerLogicalCpu"]=round(load/len(cores),4)
+            data["interpretationNotes"]=[
+                "load必须结合逻辑CPU数量与CPU PSI解释，部分核心忙不能证明整机CPU饱和。",
+                "Swap使用率只表示已占用容量，换页压力须核对PSI及换页速率。",
+                "进程退出列表为空只表示未观察到退出，不能证明没有OOM事件。"]
+            return data
         if tool=="status": return await self.platform.get_server(server)
         if tool=="gpu":
             data=await self.platform.get_server_gpus(server)
@@ -94,12 +131,21 @@ class InvestigationTools:
             return await self.platform.get_gpu_history(server,probe.gpu_index,start,end)
         if tool=="workloads":
             data=await self.platform.get_active_workloads(server)
+            data=[r for r in data if r.get("fresh") is not False and r.get("state") not in {"MISSING","EXITED_UNKNOWN","SUCCEEDED","FAILED"}]
             self.runs.update(str(UUID(r["runId"])) for r in data if r.get("runId"))
             jobs=await self.platform.get_training_jobs(server)
             self.jobs.update(r["id"] for r in jobs if type(r.get("id")) is int)
             return {"activeTasks": data, "registeredTasks": jobs}
         if tool=="runtime_contention":
-            return await self.platform._get(f"/api/servers/{server}/training/runtime-contention",dict)
+            report=await self.platform._get(f"/api/servers/{server}/training/runtime-contention",dict)
+            # Select authoritative summaries before applying the generic context budget.
+            return {key:report[key] for key in (
+                "serverId","status","window","summary","activeTasks","pressureSignals",
+                "performanceEvidence","missingEvidence","recommendations"
+            ) if key in report} | {
+                "overlappingPairs":[{k:v for k,v in pair.items() if k not in {"evidence","possibleBottlenecks"}}
+                    for pair in report.get("overlappingPairs",report.get("overlappingRuns",[]))[:20]]
+            }
         if tool=="training_analysis":
             if probe.job_id is None: raise ValueError("JOB_REQUIRED")
             return await self.platform.get_training_analysis(server,probe.job_id)
@@ -119,7 +165,7 @@ def data_status(data, tool, now):
                 if key in {"collectedAt","sampledAt","collected_at","sampled_at","latestSampleAt","lastHeartbeatAt"} and isinstance(item,str):
                     try:
                         at=datetime.fromisoformat(item.replace("Z","+00:00"))
-                        if at.tzinfo: times.append(at)
+                        times.append(at if at.tzinfo else at.replace(tzinfo=timezone.utc))
                     except ValueError: pass
                 elif isinstance(item,(list,dict)): visit(item)
         elif isinstance(value,list):

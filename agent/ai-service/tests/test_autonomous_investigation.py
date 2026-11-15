@@ -91,7 +91,8 @@ class AutonomousInvestigationTests(unittest.IsolatedAsyncioTestCase):
         graph,p,_=self.setup_graph([decision([{"tool":"gpu_history","gpu_index":9}]),decision([])])
         report=await graph.run(1,1,"GPU")
         p.get_gpu_history.assert_not_awaited()
-        self.assertEqual(report["evidence"][-1]["dataStatus"],"UNAVAILABLE")
+        self.assertIn("plan:INVALID_PROBE_ARGUMENTS",report["collection_errors"])
+        self.assertFalse(any(e["sourceTool"]=="gpu_history" for e in report["evidence"]))
 
     async def test_simultaneous_readers_only_overlap_no_claim_of_slowdown(self):
         graph,p,_=self.setup_graph([decision([{"tool":"runtime_contention"}]),
