@@ -3,7 +3,8 @@ import secrets
 from contextlib import AsyncExitStack
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+from uuid import UUID
 import httpx
 from .chat import auth_scheme, get_settings
 from .knowledge import resources
@@ -13,6 +14,10 @@ router = APIRouter(prefix="/api/internal", tags=["受控事件调查"])
 
 
 class InvestigationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_id: int | None = Field(default=None,gt=0)
+    lease: str | None = Field(default=None,max_length=64)
+    run_id: UUID | None = None
     incident_id: int = Field(gt=0)
     server_id: int = Field(gt=0)
     question: str = Field(min_length=1, max_length=2400)
@@ -51,14 +56,22 @@ async def investigate(
             )
             stack.push_async_callback(llm.close)
             embedding, store = resources(request, settings)
+            async def progress(value):
+                if payload.task_id and payload.lease:
+                    response=await platform.client.post(f"api/investigation-tasks/{payload.task_id}/progress",
+                        json=value,headers={"X-AI-Service-Key":service_key,"X-Investigation-Lease":payload.lease})
+                    response.raise_for_status()
             return await asyncio.wait_for(
-                IncidentGraph(platform, llm, embedding, store).run(
+                IncidentGraph(platform, llm, embedding, store,
+                    max_rounds=settings.investigation_rounds,max_calls=settings.investigation_calls,
+                    seconds=settings.investigation_seconds,progress=progress).run(
                     payload.incident_id,
                     payload.server_id,
                     payload.question,
                     payload.alert_evidence,
+                    str(payload.run_id) if payload.run_id else None,
                 ),
-                timeout=150,
+                timeout=settings.investigation_seconds+5,
             )
         except httpx.HTTPStatusError as exc:
             raise HTTPException(

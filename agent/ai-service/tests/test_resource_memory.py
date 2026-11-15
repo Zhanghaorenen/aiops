@@ -137,7 +137,7 @@ class IncidentMemoryTests(unittest.IsolatedAsyncioTestCase):
 class IncidentGraphMemoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_graph_keeps_verified_history_separate_from_current_evidence(self):
         import test_v02 as fixtures
-        graph, platform, llm=fixtures.IncidentGraphTests().graph()
+        graph, platform, llm=fixtures.IncidentGraphTests().graph(probes=[{"tool":"historical_cases"}])
         historical={'case_id':str(uuid.uuid4()),'version':1,'status':'VERIFIED','title':'已验证故障','resolution':'已验证步骤'}
         graph.experience_memory=SimpleNamespace(search=AsyncMock(return_value={'results':[historical]}))
         report=await graph.run(2,1,'GPU 问题')

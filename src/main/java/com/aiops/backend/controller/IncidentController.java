@@ -23,6 +23,12 @@ public class IncidentController {
     return service.fromAlert(alertId, key, retry);
   }
 
+  @PostMapping("/servers/{serverId}/training/workloads/{runId}/investigation")
+  public Object fromWorkload(@PathVariable long serverId,@PathVariable UUID runId,
+      @RequestHeader("Idempotency-Key") String key) {
+    return service.fromWorkload(serverId,runId.toString(),key);
+  }
+
   @GetMapping("/incidents")
   public List<Map<String, Object>> list() {
     return service.list();

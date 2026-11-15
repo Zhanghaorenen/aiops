@@ -11,6 +11,7 @@ const props = defineProps<{
   current?: number | null
   threshold?: number
   events?: string[]
+  intervals?: {from:string;to:string}[]
   stats?: { average?: number; maximum?: number; peakAt?: string }
 }>()
 const legacyMetrics = [
@@ -29,6 +30,7 @@ const legacyMetrics = [
       :current="current"
       :threshold="threshold"
       :events="events"
+      :intervals="intervals"
       :stats="stats" />
     <div v-else class="resource-grid">
       <MetricTrend

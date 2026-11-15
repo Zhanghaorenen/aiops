@@ -52,7 +52,7 @@ public class InvestigationTaskService {
             id)
         != 1) return null;
     return jdbc.queryForMap(
-        "SELECT r.*,i.server_id,i.title,i.description,u.username,u.status AS user_status FROM"
+        "SELECT r.*,i.server_id,i.title,i.description,i.source_run_id,u.username,u.status AS user_status FROM"
             + " ops_investigation_run r JOIN ops_incident i ON i.id=r.incident_id JOIN sys_user u"
             + " ON u.id=r.requested_by WHERE r.id=?",
         id);
@@ -80,6 +80,11 @@ public class InvestigationTaskService {
       result.add(item);
     }
     return result;
+  }
+
+  public void progress(long id, String lease, String payload) {
+    jdbc.update("UPDATE ops_investigation_run SET progress_json=? WHERE id=? AND requested_by=? AND lease_token=? AND status='RUNNING' AND lease_until>?",
+        payload,id,access.currentUser().getId(),lease,now());
   }
 
   public void authorized(Map<String, Object> run, Runnable action) {

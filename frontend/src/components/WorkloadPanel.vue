@@ -12,6 +12,23 @@ import {
 } from '../utils/resourceSuggestion'
 import TrendChart from './TrendChart.vue'
 import RuntimeContentionPanel from './RuntimeContentionPanel.vue'
+import IncidentsView from '../views/IncidentsView.vue'
+const investigationId=ref<number>()
+const investigationBusy=ref(false)
+const investigationKeys=new Map<string,string>()
+async function investigateTask(row:any) {
+  if(!props.serverId || !row.runId) return
+  const current=epoch
+  investigationBusy.value=true
+  if(!investigationKeys.has(row.runId)) investigationKeys.set(row.runId,crypto.randomUUID())
+  try {
+    const {data}=await api.post(base()+'/workloads/'+row.runId+'/investigation',{},
+      {headers:{'Idempotency-Key':investigationKeys.get(row.runId)}})
+    if(current===epoch) investigationId.value=data.incidentId
+    investigationKeys.delete(row.runId)
+  } catch(e) {if(current===epoch) error.value=errorMessage(e)}
+  finally {if(current===epoch) investigationBusy.value=false}
+}
 const contention = ref<any>()
 const contentionBusy = ref(false)
 let contentionController: AbortController | undefined
@@ -194,6 +211,8 @@ watch(
     epoch++
     contentionController?.abort()
     contention.value = undefined
+    investigationId.value=undefined
+    investigationBusy.value=false
     contentionBusy.value = false
     loadController?.abort()
     analysisController?.abort()
@@ -311,6 +330,7 @@ onBeforeUnmount(() => {
               size="small"
               @click="plan(record)"
               >复用资源</a-button
+            ><a-button v-if="record.runId && record.privateDetails" size="small" :loading="investigationBusy" @click="investigateTask(record)">AI 深度调查</a-button
             ><a-button size="small" @click="askAi(record)"
               >询问 AI</a-button
             ></a-space
@@ -319,6 +339,7 @@ onBeforeUnmount(() => {
       </template>
     </a-table>
   </a-card>
+  <IncidentsView v-if="investigationId" :key="investigationId" :incident-id="investigationId" detail-only />
   <RuntimeContentionPanel v-if="contention" :report="contention" />
   <a-card
     v-if="selected"

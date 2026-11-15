@@ -114,7 +114,7 @@ class GpuIndexTests(unittest.IsolatedAsyncioTestCase):
 
 
 class IncidentGraphTests(unittest.IsolatedAsyncioTestCase):
-    def graph(self, missing=None, invalid=False):
+    def graph(self, missing=None, invalid=False, probes=None):
         now = datetime.now(timezone.utc).isoformat()
         platform = SimpleNamespace(
             get_server_latest_metrics=AsyncMock(
@@ -141,6 +141,7 @@ class IncidentGraphTests(unittest.IsolatedAsyncioTestCase):
                 }
             ],
             "missing_evidence": missing or [],
+            "probes": probes if probes is not None else ([{"tool":"host_history"}] if missing else []),
             "suggested_steps": ["人工核对训练任务配置，不自动操作服务器"],
         }
         llm = SimpleNamespace(
@@ -170,20 +171,21 @@ class IncidentGraphTests(unittest.IsolatedAsyncioTestCase):
         return graph, platform, llm
 
     async def test_structured_report_has_observations_and_actual_sources(self):
-        graph, platform, llm = self.graph()
+        graph, platform, llm = self.graph(probes=[{"tool":"knowledge"}])
         report = await graph.run(2, 1, "GPU 问题")
         self.assertEqual(report["server_id"], 1)
         self.assertEqual(report["references"][0]["page"], 3)
         self.assertFalse(report["execution_performed"])
         self.assertEqual(report["evidence"][0]["data"]["freshness"], "FRESH")
-        self.assertEqual(llm.chat.await_count, 1)
+        self.assertEqual(llm.chat.await_count, 2)
 
     async def test_missing_evidence_has_only_one_supplemental_round(self):
         graph, platform, llm = self.graph(["缺少历史指标"])
         result = await graph.run(2, 1, "排查")
         self.assertEqual(llm.chat.await_count, 2)
         platform.get_server_metric_history.assert_awaited_once()
-        self.assertEqual(result["missing_evidence"], ["缺少历史指标"])
+        self.assertIn("缺少历史指标",result["missing_evidence"])
+        self.assertTrue(any("host_history：UNKNOWN" in gap for gap in result["missing_evidence"]))
 
     async def test_fabricated_evidence_id_is_rejected(self):
         graph, platform, llm = self.graph(invalid=True)
@@ -193,19 +195,21 @@ class IncidentGraphTests(unittest.IsolatedAsyncioTestCase):
     async def test_model_timeout_and_platform_revocation_propagate(self):
         graph, platform, llm = self.graph()
         llm.chat.side_effect = TimeoutError()
-        with self.assertRaises(TimeoutError):
-            await graph.run(2, 1, "排查")
+        result=await graph.run(2,1,"排查")
+        self.assertEqual(result["stopReason"],"TIME_BUDGET")
+        self.assertTrue(result["evidence"])
         graph, platform, llm = self.graph()
         response = httpx.Response(403, request=httpx.Request("GET", "http://platform"))
         platform.get_server_latest_metrics.side_effect = httpx.HTTPStatusError(
             "revoked", request=response.request, response=response
         )
-        with self.assertRaises(httpx.HTTPStatusError):
-            await graph.run(2, 1, "排查")
-        llm.chat.assert_not_awaited()
+        result=await graph.run(2,1,"排查")
+        self.assertEqual(result["evidence"][0]["dataStatus"],"FORBIDDEN")
+        self.assertFalse(result["confirmed_facts"])
 
     async def test_linked_alert_time_drives_gpu_history_window(self):
-        graph, platform, llm = self.graph()
+        graph, platform, llm = self.graph(probes=[{"tool":"gpu_history","gpu_index":3}])
+        platform.get_server_gpus.return_value["gpuIndices"]=[3]
         platform.get_gpu_history = AsyncMock(
             return_value=[
                 {
@@ -238,7 +242,7 @@ class IncidentGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["evidence"][0]["kind"], "linked_alerts")
         self.assertTrue(
             any(
-                item["kind"] == "gpu_temperature_history" for item in report["evidence"]
+                item["kind"] == "gpu_history" for item in report["evidence"]
             )
         )
 

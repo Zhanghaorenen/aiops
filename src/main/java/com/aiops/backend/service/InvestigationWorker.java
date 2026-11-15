@@ -46,7 +46,7 @@ public class InvestigationWorker {
       tasks.authorized(run, () -> {});
       String token =
           jwt.issue(((Number) run.get("requested_by")).longValue(), (String) run.get("username"));
-      var payload =
+      var payload = new LinkedHashMap<String,Object>(
           Map.of(
               "incident_id",
               run.get("incident_id"),
@@ -55,7 +55,10 @@ public class InvestigationWorker {
               "server_id",
               run.get("server_id"),
               "question",
-              run.get("title") + "\n" + Objects.toString(run.get("description"), ""));
+              run.get("title") + "\n" + Objects.toString(run.get("description"), "")));
+      payload.put("run_id",run.get("source_run_id"));
+      payload.put("task_id",run.get("id"));
+      payload.put("lease",run.get("lease_token"));
       var request =
           HttpRequest.newBuilder(URI.create(url + "/api/internal/investigate"))
               .timeout(Duration.ofSeconds(180))

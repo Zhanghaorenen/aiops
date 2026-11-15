@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api, errorMessage } from '../api'
+import InvestigationReport from '../components/InvestigationReport.vue'
+import InvestigationPolicy from '../components/InvestigationPolicy.vue'
 import { useWorkspaceStore } from '../stores/workspace'
 const props = defineProps<{ incidentId?: number; detailOnly?: boolean }>()
 const store = useWorkspaceStore(),
   items = ref<any[]>([]),
   detail = ref<any>(null),
-  alerts = ref<any[]>([]),
+
   error = ref(''),
   busy = ref(false),
   reviewNote = ref(''),
@@ -19,26 +21,37 @@ function row(r: any): any {
     )
   return r
 }
+let epoch=0,openVersion=0
 async function load() {
-  if (store.demo) return
-  items.value = row((await api.get('/api/incidents')).data)
-  alerts.value = row((await api.get('/api/alerts')).data)
+  if (store.demo || !store.token) return
+  const current=epoch
+  if(!props.detailOnly) {
+    const {data}=await api.get('/api/incidents')
+    if(current!==epoch) return
+    items.value=row(data)
+  }
   if (detail.value) await open(detail.value.id)
 }
 async function run(fn: () => Promise<void>) {
+  const current=epoch
   busy.value = true
   error.value = ''
   try {
     await fn()
   } catch (e) {
-    error.value = errorMessage(e)
+    if(current===epoch) error.value = errorMessage(e)
   } finally {
-    busy.value = false
+    if(current===epoch) busy.value = false
   }
 }
 async function open(id: number) {
-  detail.value = row((await api.get(`/api/incidents/${id}`)).data)
+  const current=epoch,version=++openVersion
+  const {data}=await api.get(`/api/incidents/${id}`)
+  if(current===epoch && version===openVersion) detail.value=row(data)
 }
+const stateLabel:Record<string,string>={PENDING:'排队',RUNNING:'调查中',SUCCEEDED:'成功',FAILED:'失败'}
+const checkLabel:Record<string,string>={host:'主机指标',gpu:'显卡状态',host_history:'主机历史',gpu_history:'显卡历史',runtime_contention:'资源压力',gpu_processes:'计算进程',workloads:'活跃任务',workload_analysis:'任务资源',training_analysis:'训练性能',knowledge:'知识库',historical_cases:'历史故障经验',status:'在线状态'}
+function progress(raw:string) { try { return JSON.parse(raw??'{}') } catch { return {} } }
 const keys = new Map<number, string>()
 async function investigate() {
   const id = detail.value.id
@@ -78,11 +91,16 @@ async function review(id: number, helpful: boolean) {
   })
 }
 watch(
-  () => props.incidentId,
-  (id) => {
-    if (id) void run(() => open(id))
+  [() => props.incidentId,()=>store.token,()=>store.demo],
+  ([id]) => {
+    epoch++
+    detail.value=null
+    items.value=[]
+    keys.clear()
+    error.value=''
+    if (id && store.token && !store.demo) void run(() => open(Number(id)))
   },
-  { immediate: true },
+  { immediate: true,flush:'sync' },
 )
 onMounted(() => {
   if (!props.detailOnly) void run(load)
@@ -90,7 +108,7 @@ onMounted(() => {
 const timer = setInterval(() => {
   if (!busy.value) void run(load)
 }, 5000)
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {epoch++;clearInterval(timer)})
 const columns = [
   { title: '事件', dataIndex: 'id' },
   { title: '标题', dataIndex: 'title' },
@@ -125,7 +143,7 @@ const columns = [
             )
           "
           @click="investigate"
-          >AI 只读调查</a-button
+          >AI 深度调查</a-button
         ><a-select
           v-if="canManage"
           :value="detail.status"
@@ -140,8 +158,11 @@ const columns = [
       ><a-list :data-source="detail.runs"
         ><template #renderItem="{ item }"
           ><a-list-item
-            >调查 #{{ item.id }} · {{ item.status }} ·
-            {{ item.error_code || '' }}</a-list-item
+            ><div>调查 #{{ item.id }} · {{ stateLabel[item.status]??'状态待更新' }}
+              <p v-if="item.status==='FAILED'">调查未完成，可能因超时、权限变化或依赖故障。可以重新发起。</p>
+              <p v-if="item.progress_json">{{ progress(item.progress_json).stage }} · 已完成 {{ progress(item.progress_json).toolCalls??0 }} 次检查</p>
+              <a-space wrap><a-tag v-for="(c,i) in progress(item.progress_json).checks??[]" :key="i">{{ checkLabel[c.tool]??'监控检查' }} · {{ c.status==='FRESH'?'已取得新鲜数据':c.status==='UNAVAILABLE'?'暂不可用':c.status==='FORBIDDEN'?'权限受限':'已记录' }}</a-tag></a-space>
+            </div></a-list-item
           ></template
         ></a-list
       ><a-card
@@ -149,68 +170,7 @@ const columns = [
         :key="item.id"
         :title="`诊断报告 #${item.id}`"
         style="margin-top: 16px"
-        ><a-alert
-          message="根因均为待验证假设，建议未被执行。报告可能包含私有知识库内容，仅发起人可查看。"
-          type="info"
-        />
-        <p>
-          {{ report(item.report_json).generated_at }} ·
-          {{ report(item.report_json).model }} ·
-          {{ report(item.report_json).workflow_version }}
-        </p>
-        <h3>监控证据和采集时间</h3>
-        <details v-for="e in report(item.report_json).evidence" :key="e.id">
-          <summary>{{ e.id }} · {{ e.kind }}</summary>
-          <pre style="white-space: pre-wrap; overflow-wrap: anywhere">{{
-            JSON.stringify(e.data, null, 2)
-          }}</pre>
-        </details>
-        <h3>可能原因</h3>
-        <p
-          v-for="(cause, i) in report(item.report_json).possible_causes"
-          :key="i"
-        >
-          {{ cause.hypothesis }} · 支持
-          {{ cause.supporting_evidence_ids?.join(', ') }} · 反对
-          {{ cause.refuting_evidence_ids?.join(', ') }}
-        </p>
-        <h3>缺失证据</h3>
-        <p>{{ report(item.report_json).missing_evidence?.join('；') }}</p>
-        <h3>建议步骤</h3>
-        <ol>
-          <li
-            v-for="(step, i) in report(item.report_json).suggested_steps"
-            :key="i"
-          >
-            {{ step }}
-          </li>
-        </ol>
-        <h3>后续验证方法</h3>
-        <ul>
-          <li
-            v-for="step in report(item.report_json).verification_steps ?? [
-              '人工处理后，比较同一 GPU 和相同时间窗口的原始指标与恢复阈值，核实告警及任务所有者反馈。',
-            ]"
-            :key="step"
-          >
-            {{ step }}
-          </li>
-        </ul>
-        <h3>实际检索来源</h3>
-        <p
-          v-for="historical in report(item.report_json).historical_cases"
-          :key="historical.case_id"
-        >
-          历史经验：{{ historical.title }} · {{ historical.case_id }} ·
-          {{ historical.status }} · v{{ historical.version }}
-        </p>
-        <p
-          v-for="source in report(item.report_json).references"
-          :key="source.chunk_id"
-        >
-          {{ source.document_title }} · 第 {{ source.page ?? '未知' }} 页 ·
-          {{ source.section }} · {{ source.chunk_id }}
-        </p>
+        ><InvestigationReport :report="report(item.report_json)" />
         <template v-if="canManage"
           ><a-input
             v-model:value="reviewNote"
@@ -231,6 +191,7 @@ const columns = [
           ></template
         ></a-card
       >
+      <InvestigationPolicy v-if="store.role==='ADMIN'" :server-id="detail.server_id" />
       <details>
         <summary>事件历史</summary>
         <p v-for="h in detail.history" :key="h.id">

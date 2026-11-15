@@ -8,6 +8,7 @@ const props = defineProps<{
   current?: number | null
   threshold?: number
   events?: string[]
+  intervals?: {from:string;to:string}[]
   stats?: { average?: number; maximum?: number; peakAt?: string }
 }>()
 const element = ref<HTMLDivElement | null>(null)
@@ -32,7 +33,7 @@ function value(n: number | undefined) {
   return n == null ? '—' : `${n.toFixed(1)} ${props.unit}`
 }
 watch(
-  () => [props.points, props.threshold, props.events],
+  () => [props.points, props.threshold, props.events, props.intervals],
   async (_, __, cleanup) => {
     let disposed = false
     let destroy = () => {}
@@ -101,6 +102,11 @@ watch(
               },
             },
             lineStyle: { width: 2 },
+            markArea: {
+              silent:true,
+              itemStyle:{color:'#d9933125'},
+              data:(props.intervals??[]).map(i=>[{name:'任务并发',xAxis:i.from},{xAxis:i.to}]),
+            },
             markLine: {
               silent: true,
               symbol: 'none',

@@ -215,9 +215,9 @@ public class IncidentService {
     result.put(
         "runs",
         jdbc.queryForList(
-            "SELECT id,incident_id,requested_by,status,created_at,started_at,finished_at,error_code"
-                + " FROM ops_investigation_run WHERE incident_id=? ORDER BY id DESC",
-            id));
+            "SELECT id,incident_id,requested_by,status,created_at,started_at,finished_at,error_code,progress_json"
+                + " FROM ops_investigation_run WHERE incident_id=? AND requested_by=? ORDER BY id DESC",
+            id,access.currentUser().getId()));
     result.put(
         "reports",
         jdbc.queryForList(
@@ -248,6 +248,35 @@ public class IncidentService {
         access.currentUser().getId(),
         reportId);
     history(((Number) incident.get("id")).longValue(), "REPORT_REVIEW", Boolean.toString(helpful));
+  }
+
+  @Transactional
+  public Map<String,Object> fromWorkload(long server, String runId, String key) {
+    var node=access.requireNode(server,ClusterPermission.AI_DIAGNOSE);
+    var rows=jdbc.queryForList("SELECT * FROM ops_workload_run WHERE id=? AND server_id=? FOR UPDATE",runId,server);
+    if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+    var run=rows.get(0);
+    long user=access.currentUser().getId();
+    if(run.get("user_id")==null || ((Number)run.get("user_id")).longValue()!=user)
+      access.require(node.getClusterId(),ClusterPermission.AGENT_MANAGE);
+    var found=jdbc.queryForList("SELECT id FROM ops_incident WHERE source_run_id=?",runId);
+    long id;
+    if(found.isEmpty()) {
+      var holder=new org.springframework.jdbc.support.GeneratedKeyHolder();
+      jdbc.update(c->{
+        var ps=c.prepareStatement("INSERT INTO ops_incident(cluster_id,server_id,title,description,status,created_by,created_at,updated_at,source_run_id) VALUES(?,?,?,?,'OPEN',?,?,?,?)",java.sql.Statement.RETURN_GENERATED_KEYS);
+        ps.setLong(1,node.getClusterId()); ps.setLong(2,server);
+        ps.setString(3,"GPU 训练运行资源调查");
+        ps.setString(4,"调查该运行的资源压力、性能变化及相关任务。");
+        ps.setLong(5,user); ps.setObject(6,now()); ps.setObject(7,now()); ps.setString(8,runId);
+        return ps;
+      },holder);
+      id=holder.getKey().longValue();
+      history(id,"CREATED_FROM_WORKLOAD",runId);
+    } else id=((Number)found.get(0).get("id")).longValue();
+    var active=jdbc.queryForList("SELECT id FROM ops_investigation_run WHERE incident_id=? AND status IN ('PENDING','RUNNING')",id);
+    if(active.isEmpty()) investigate(id,key);
+    return Map.of("incidentId",id,"incident",detail(id));
   }
 
   private void history(Long id, String action, String detail) {

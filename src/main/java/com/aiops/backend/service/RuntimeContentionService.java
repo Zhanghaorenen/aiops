@@ -19,6 +19,9 @@ public class RuntimeContentionService {
   private static Double number(Object value) {
     return value instanceof Number n && Double.isFinite(n.doubleValue()) && n.doubleValue()>=0 ? n.doubleValue():null;
   }
+  static String taskId(long server,String identity) {
+    return "runtime-"+WorkloadService.hash(server+"|"+identity).substring(0,24);
+  }
   private static boolean positive(Object v) { return number(v)!=null && number(v)>0; }
   private static boolean high(Object v,double threshold) { return number(v)!=null && number(v)>=threshold; }
   private static boolean low(Object v,double threshold) { return number(v)!=null && number(v)<=threshold; }
@@ -85,6 +88,8 @@ public class RuntimeContentionService {
     var pairs=new LinkedHashMap<String,Pair>();
     var signals=new TreeMap<String,Signal>();
     var timeline=new ArrayList<Map<String,Object>>();
+    var trends=new ArrayList<Map<String,Object>>();
+    var performance=new RuntimePerformance();
     var policies=jdbc.queryForList("SELECT psi_threshold FROM ops_training_policy WHERE server_id=?",server);
     double threshold=policies.isEmpty()?10:((Number)policies.get(0).get("psi_threshold")).doubleValue();
     var mine=jdbc.queryForList("SELECT linux_uid,linux_username FROM ops_training_linux_identity WHERE server_id=? AND user_id=? AND linux_uid IS NOT NULL",server,user);
@@ -111,13 +116,14 @@ public class RuntimeContentionService {
       var privateMetrics=new LinkedHashMap<String,Map<String,Object>>();
       var indices=new HashMap<String,Set<Integer>>();
       for(var group:groups.stream().limit(MAX_GROUPS).toList()) {
-        String id="runtime-"+WorkloadService.hash(server+"|"+group.key()).substring(0,24);
+        String id=taskId(server,group.key());
         var d=(Map<?,?>)group.root().get("details");
         boolean own=admin || mine.stream().anyMatch(m->Objects.equals(ProcessGroups.integer(m.get("linux_uid")),ProcessGroups.integer(d.get("linuxUid"))) && Objects.equals(m.get("linux_username"),group.root().get("username")));
         var metrics=new LinkedHashMap<>(group.metrics()); metrics.remove("members");
         var gpus=new TreeSet<Integer>(); group.gpuProcesses().forEach(p->gpus.add(((Number)p.get("gpu_index")).intValue()));
         indices.put(id,gpus); privateMetrics.put(id,metrics);
-        var item=values("id",id,"displayName","GPU 候选任务 "+id.substring(id.length()-6),"gpuIndices",gpus,"resources",metrics,
+        Object name=observedRuns.containsKey(id)?observedRuns.get(id).get("displayName"):"GPU 任务 "+(observedRuns.size()+1);
+        var item=values("id",id,"displayName",name,"gpuIndices",gpus,"resources",metrics,
             "sampledAt",time.toString(),"identityStatus",!group.stable()?"SNAPSHOT_ONLY":d.get("linuxUid")==null?"UID_UNKNOWN":"TRACKED", "trainingConfirmed",false,"missingEvidence",group.missing());
         if(own) { item.put("pid",group.root().get("pid")); item.put("startedAt",d.get("startedAt")); item.put("linuxUid",d.get("linuxUid")); }
         // Do not return another user's PID, username, command, working directory, run config, or progress.
@@ -125,8 +131,12 @@ public class RuntimeContentionService {
       }
       if(current.isEmpty() && !"NO_GPU".equals(sample.getValue().get("collection_status")))
         absent.add("PROCESS_VISIBILITY_UNKNOWN：空进程结果不能证明没有训练；可能存在权限或采集缺口");
+      boolean trackable="AVAILABLE".equals(sample.getValue().get("collection_status"))
+          && groups.stream().allMatch(g->g.stable() && ((Map<?,?>)g.root().get("details")).get("linuxUid")!=null);
+      performance.observe(time,trackable ? indices.keySet() : Set.of());
       var flags=new TreeMap<String,Boolean>();
-      flags.put("HOST_CPU_PRESSURE",high(details.get("cpuPsiAvg10"),threshold) || high(host.get("cpu_percent"),90));
+      flags.put("HOST_CPU_PRESSURE",high(details.get("cpuPsiAvg10"),threshold));
+      flags.put("HIGH_CPU_LOAD",high(host.get("cpu_percent"),90));
       flags.put("HOST_IO_PRESSURE",high(details.get("ioPsiAvg10"),threshold));
       Double available=number(details.get("memoryAvailableBytes")),total=number(host.get("memory_total_bytes"));
       flags.put("RAM_PRESSURE",high(details.get("memoryPsiAvg10"),threshold) || available!=null && total!=null && total>0 && available/total<=.1);
@@ -146,6 +156,8 @@ public class RuntimeContentionService {
       }
       var point=values("snapshotId",sid,"collectedAt",time.toString(),"host",hostEvidence,"gpus",cards,"runs",current);
       timeline.add(point);
+      trends.add(values("at",time,"hostAt",hostEvidence.get("collectedAt"),"ioPsi",hostEvidence.get("ioPsiAvg10"),
+          "gpus",cards.stream().map(c->values("index",c.get("gpuIndex"),"utilization",c.get("utilizationPercent"))).toList()));
       for(int a=0;a<current.size();a++) for(int b=a+1;b<current.size();b++) {
         String left=current.get(a).get("id").toString(),right=current.get(b).get("id").toString();
         String key=left.compareTo(right)<0?left+"|"+right:right+"|"+left;
@@ -168,27 +180,49 @@ public class RuntimeContentionService {
     boolean fresh=last!=null && Duration.between(last,now).getSeconds()<=90;
     if(!fresh) missing.add("STALE_OR_MISSING：GPU采样缺失或超过90秒，不判断当前状态");
     if(chronological.size()<3) missing.add("HISTORY_INSUFFICIENT：不足3个不同时间的采样");
-    missing.add("TRAINING_PROGRESS_UNKNOWN：未登记进程没有Step Time/吞吐证据，不认定训练变慢");
+    var measured=performance.evaluate(jdbc,server,user,admin,fresh && !truncated);
+    if (measured.reason()!=null) missing.add("TRAINING_PROGRESS_UNKNOWN："+measured.reason());
     missing.add("DATASET_ACCESS_UNKNOWN：未追踪数据集/设备归属，不能确认数据集竞争");
     if(truncated) missing.add("WINDOW_TRUNCATED：部分组合或采样未纳入");
     var risks=signalResults(signals);
+    var pressure=pressureOnly(risks);
     var overlaps=new ArrayList<Map<String,Object>>();
     for(var pair:pairs.values()) {
       var pairSignals=signalResults(pair.signals);
-      overlaps.add(values("runIds",pair.ids,"status",pair.domains.isEmpty()?"UNKNOWN":pairSignals.isEmpty()?"RESOURCE_OVERLAP_ONLY":"CANDIDATE",
+      var pairPressure=pressureOnly(pairSignals);
+      var comparisons=measured.comparisons().stream().filter(c->pair.ids.contains(c.taskId()) && c.concurrentTasks().containsAll(pair.ids)).toList();
+      String level=comparisons.stream().anyMatch(RuntimePerformance.Comparison::degraded) ? "PERFORMANCE_DEGRADATION" :
+          !pairPressure.isEmpty() ? "RESOURCE_PRESSURE" : pair.domains.isEmpty() ? "UNKNOWN" : "RESOURCE_OVERLAP";
+      overlaps.add(values("runIds",pair.ids,"level",level,"pressureSignals",pairPressure,"performanceComparisons",comparisons,
+          "status",pair.domains.isEmpty()?"UNKNOWN":pairPressure.isEmpty()?"RESOURCE_OVERLAP_ONLY":"CANDIDATE",
           "window",values("from",pair.intervals.get(0).get("from"),"to",pair.last.toString()),"intervals",pair.intervals,
           "alignedSampleCount",pair.count,"observedOverlapSeconds",pair.intervals.stream().mapToLong(i->Duration.between(Instant.parse(i.get("from").toString()),Instant.parse(i.get("to").toString())).getSeconds()).sum(),
           "sharedResources",pair.domains,"evidence",pair.evidence,"possibleBottlenecks",pairSignals,"missingEvidence",List.copyOf(pair.missing),
           "conclusion","只表示同一采样窗口的资源共现和候选压力，不证明因果或数据集竞争"));
     }
     boolean metricUnknown=missing.stream().anyMatch(m->!m.startsWith("TRAINING_PROGRESS") && !m.startsWith("DATASET_ACCESS"));
-    String status=!fresh || truncated || chronological.size()<3 ? "UNKNOWN":!risks.isEmpty()?"OBSERVED_PRESSURE":metricUnknown?"UNKNOWN":overlaps.isEmpty()?"NO_OVERLAP_OBSERVED":"NO_PRESSURE_OBSERVED";
+    String status=!fresh || truncated || chronological.size()<3 ? "UNKNOWN":!pressure.isEmpty()?"OBSERVED_PRESSURE":metricUnknown?"UNKNOWN":overlaps.isEmpty()?"NO_OVERLAP_OBSERVED":"NO_PRESSURE_OBSERVED";
+    String level="UNKNOWN", conclusion="证据不足";
+    if (fresh && !truncated && chronological.size()>=3) {
+      if ("PERFORMANCE_DEGRADATION".equals(measured.status())) { level=measured.status(); conclusion="存在性能下降证据"; }
+      else if (!pressure.isEmpty()) { level="RESOURCE_PRESSURE"; conclusion="发现压力"; }
+      else if ("NO_PRESSURE_OBSERVED".equals(status) && overlaps.stream().anyMatch(p->"RESOURCE_OVERLAP".equals(p.get("level")))) {
+        level="RESOURCE_OVERLAP"; conclusion="正常共用";
+      } else if ("NO_OVERLAP_OBSERVED".equals(status)) { level="NO_OVERLAP"; conclusion="未观察到任务并发"; }
+    }
+    var summary=values("level",level,"conclusion",conclusion,"activeTaskCount",fresh?latestGroups.size():null,
+        "overlappingPairCount",overlaps.size(),"pressureSignalCount",pressure.size());
     return values("serverId",server,"status",status,"window",values("from",from.toString(),"to",now.toString(),"latestSampleAt",last==null?null:last.toString(),"fresh",fresh,"alignmentMaxSeconds",30,"observationGapMaxSeconds",90),
+        "summary",summary,"activeTasks",fresh?latestGroups:List.of(),"overlappingPairs",overlaps,
+        "pressureSignals",pressure,"performanceEvidence",measured,"trends",trends,
         "activeRuns",fresh?latestGroups:List.of(),"observedRuns",new ArrayList<>(observedRuns.values()),"overlappingRuns",overlaps,
         "evidence",timeline.stream().skip(Math.max(0,timeline.size()-120)).toList(),"sampleCount",chronological.size(),"evidenceLimit",120,
         "possibleBottlenecks",risks,"missingEvidence",List.copyOf(missing),"recommendations",recommend(risks),"gpuUtilizationScope","WHOLE_GPU_NOT_PER_PROCESS");
   }
 
+  private static List<Map<String,Object>> pressureOnly(List<Map<String,Object>> signals) {
+    return signals.stream().filter(s->s.get("type").toString().endsWith("_PRESSURE")).toList();
+  }
   private static List<Map<String,Object>> signalResults(Map<String,Signal> signals) {
     var result=new ArrayList<Map<String,Object>>();
     signals.forEach((kind,signal)-> { if(signal.sustained) result.add(values("type",kind.split(":")[0],"gpuIndex",kind.contains(":")?Integer.parseInt(kind.split(":")[1]):null,"status","OBSERVED_SIGNAL",
@@ -203,7 +237,8 @@ public class RuntimeContentionService {
     if(kinds.contains("LOW_GPU_UTILIZATION") && kinds.contains("HOST_IO_PRESSURE")) result.add("输入流水线或存储等待是候选原因，需同窗口训练吞吐和设备指标验证");
     if(kinds.contains("RAM_PRESSURE")) result.add("检查Available RAM、内存PSI及共享内存，评估减少预取和批量；RSS是含共享页的上界估计");
     if(kinds.contains("HIGH_GPU_LOAD")) result.add("整卡高利用率可能表示正常高负载，不能据此认定竞争或单进程利用率");
-    result.add("补充缺失采样与同阶段Step Time/吞吐后再验证性能退化；本接口只读，不实施资源准入或进程处置");
+    if (kinds.contains("HOST_CPU_PRESSURE")) result.add("对照主机 CPU 等待时间与训练每步耗时，检查数据准备线程是否排队。");
+    if (kinds.contains("VRAM_PRESSURE")) result.add("检查对应显卡的可用显存和任务的峰值需求。");
     return result;
   }
 }

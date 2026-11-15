@@ -52,7 +52,13 @@ class Settings:
     embedding_batch_size: int = 16
     rag_vector_schema_version: str = '2'
 
+    investigation_rounds: int = 4
+    investigation_calls: int = 12
+    investigation_seconds: float = 150
+
     def __post_init__(self):
+        if not 1<=self.investigation_rounds<=4 or not 1<=self.investigation_calls<=12 or not 1<=self.investigation_seconds<=150:
+            raise ValueError("INVALID_INVESTIGATION_BUDGET")
         if not 1 <= self.memory_top_k <= 5 or not 0 <= self.memory_score_threshold <= 1 or not 200 <= self.memory_context_chars <= 4000 or not .1 <= self.memory_recall_timeout <= 5:
             raise ValueError('INVALID_MEMORY_RECALL_CONFIGURATION')
         if not self.redis_key_prefix.strip() or not 1 <= self.redis_port <= 65535 or not 0 <= self.redis_db <= 15:
@@ -76,6 +82,9 @@ class Settings:
         if redis_enabled not in {'true', 'false'}:
             raise ValueError('AIOPS_REDIS_ENABLED must be true or false')
         return cls(
+            investigation_rounds=int(os.getenv("AIOPS_INVESTIGATION_ROUNDS","4")),
+            investigation_calls=int(os.getenv("AIOPS_INVESTIGATION_CALLS","12")),
+            investigation_seconds=float(os.getenv("AIOPS_INVESTIGATION_SECONDS","150")),
             memory_top_k=int(os.getenv('AIOPS_MEMORY_TOP_K','4')),
             memory_score_threshold=float(os.getenv('AIOPS_MEMORY_SCORE_THRESHOLD','0.72')),
             memory_context_chars=int(os.getenv('AIOPS_MEMORY_CONTEXT_CHARS','2000')),

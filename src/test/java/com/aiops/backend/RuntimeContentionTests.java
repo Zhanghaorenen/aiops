@@ -89,6 +89,37 @@ class RuntimeContentionTests extends ClusterTestSupport {
     var pair=(Map<?,?>)list(service.analyze(peer.nodeId()),"overlappingRuns").get(0);
     assertEquals(2,((List<?>)pair.get("intervals")).size());assertEquals(10L,pair.get("observedOverlapSeconds"));
   }
+  private void progressFixture(EnrollmentResult node, boolean samePhase, boolean duplicate) {
+    for(int i=0;i<6;i++) {
+      if(i<3) sample(node,i*5,0,60,101);
+      else sample(node,i*5,0,60,101,202);
+    }
+    long owner=testJdbc.queryForObject("SELECT id FROM sys_user WHERE username='fixtureAdmin'",Long.class);
+    testJdbc.update("INSERT INTO ops_gpu_usage(server_id,gpu_index,user_id,task_name,starts_at,expected_end_at,status,created_at,updated_at) VALUES(?,0,?,'fixture',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'ACTIVE',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",node.nodeId(),owner);
+    long id=testJdbc.queryForObject("SELECT MAX(id) FROM ops_gpu_usage",Long.class);
+    testJdbc.update("INSERT INTO ops_training_job(id,mode,state,request_json,pid,process_started_at,linux_username) VALUES(?,'MANUAL','RUNNING','{}',101,?,'private-user')",id,base.minusSeconds(100).toString());
+    testJdbc.update("UPDATE ops_workload_run SET job_id=?,user_id=? WHERE server_id=? AND root_pid=101",id,owner,node.nodeId());
+    for(int i=0;i<6;i++) {
+      String phase=i<3 || samePhase ? "training" : "validation";
+      String payload="{\"phase\":\""+phase+"\",\"step\":"+(duplicate?1:i)+",\"stepTime\":"+(i<3?1:2)+",\"samplesPerSecond\":"+(i<3?100:50)+"}";
+      testJdbc.update("INSERT INTO ops_training_progress(job_id,collected_at,payload_json) VALUES(?,?,?)",id,java.time.LocalDateTime.ofInstant(base.plusSeconds(i*5),ZoneOffset.UTC),payload);
+    }
+  }
+  @Test void samePhaseProgressDetectsObservedPerformanceDegradation() {
+    var node=node(); progressFixture(node,true,false);
+    var report=service.analyze(node.nodeId());
+    assertEquals("PERFORMANCE_DEGRADATION",((Map<?,?>)report.get("summary")).get("level"));
+    assertTrue(report.get("performanceEvidence").toString().contains("baselineSamples=3"));
+    assertTrue(report.get("performanceEvidence").toString().contains("concurrentMedian=2.0"));
+    assertTrue(list(report,"pressureSignals").isEmpty());
+  }
+  @Test void changedTrainingStageOrReplayedProgressCannotProveSlowdown() {
+    var node=node(); progressFixture(node,false,false);
+    assertTrue(service.analyze(node.nodeId()).get("performanceEvidence").toString().contains("status=UNKNOWN"));
+    var peer=node(); progressFixture(peer,true,true);
+    assertTrue(service.analyze(peer.nodeId()).get("performanceEvidence").toString().contains("status=UNKNOWN"));
+  }
+
   @Test void viewerGetsSharedMetricsButNotOtherUsersPrivateProcessIdentity() {
     var node=node();for(int i=0;i<3;i++) sample(node,i*10,0,60,101,202);
     testJdbc.update("INSERT INTO sys_user(username,password_hash,status,created_at,updated_at) VALUES('contention-viewer','test','ACTIVE',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)");
