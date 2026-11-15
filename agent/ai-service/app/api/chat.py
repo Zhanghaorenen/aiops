@@ -29,6 +29,13 @@ router = APIRouter(prefix="/api", tags=["AI 对话"])
 auth_scheme = HTTPBearer(auto_error=False)
 
 
+def build_agent(llm,server_tools,gpu_tools,max_rounds,*,settings,platform,**kwargs):
+    if settings.multi_agent_enabled:
+        from ..agents.multi_agent.supervisor import MultiAgentSupervisor
+        return MultiAgentSupervisor(llm,server_tools,gpu_tools,max_rounds,platform=platform,
+            chat_timeout=settings.chat_timeout,**kwargs)
+    return GraphAgent(llm,server_tools,gpu_tools,max_rounds,**kwargs)
+
 def get_limiter(request, settings):
     from ..redis_support import ChatRateLimiter
     if request.app.state.chat_limiter is None:
@@ -81,11 +88,11 @@ async def chat(payload: ChatRequest, request: Request,
                                                settings.llm_api_key, settings.llm_timeout)
             stack.push_async_callback(llm.close)
             from .knowledge import rag_tool
-            agent = GraphAgent(
+            agent = build_agent(
                 llm,
                 ServerTool(ServerManager(platform), IncidentMemorySearch(platform, settings, request.app.state.rag_resources).search),
                 GpuTool(GPUManager(platform)),
-                settings.max_rounds, rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
+                settings.max_rounds, settings=settings,platform=platform,rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
                 memory_recall=UserMemoryRecall(platform,settings,request.app.state.rag_resources,verified_user=user),
             )
             async with session_turn(platform, payload) as turn:
@@ -151,9 +158,9 @@ async def chat_stream(payload: ChatRequest, request: Request,
                 )
                 stack.push_async_callback(llm.close)
                 from .knowledge import rag_tool
-                agent = GraphAgent(
+                agent = build_agent(
                     llm, ServerTool(ServerManager(platform), IncidentMemorySearch(platform, settings, request.app.state.rag_resources).search),
-                    GpuTool(GPUManager(platform)), settings.max_rounds, rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
+                    GpuTool(GPUManager(platform)), settings.max_rounds, settings=settings,platform=platform,rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
                     memory_recall=UserMemoryRecall(platform,settings,request.app.state.rag_resources,verified_user=stream_user),
                 )
                 import anyio

@@ -52,6 +52,7 @@ class Settings:
     embedding_batch_size: int = 16
     rag_vector_schema_version: str = '2'
 
+    multi_agent_enabled: bool = False
     investigation_rounds: int = 4
     investigation_calls: int = 12
     investigation_seconds: float = 150
@@ -82,6 +83,7 @@ class Settings:
         if redis_enabled not in {'true', 'false'}:
             raise ValueError('AIOPS_REDIS_ENABLED must be true or false')
         return cls(
+            multi_agent_enabled=os.getenv("AIOPS_MULTI_AGENT_ENABLED","false").strip().lower()=="true",
             investigation_rounds=int(os.getenv("AIOPS_INVESTIGATION_ROUNDS","4")),
             investigation_calls=int(os.getenv("AIOPS_INVESTIGATION_CALLS","12")),
             investigation_seconds=float(os.getenv("AIOPS_INVESTIGATION_SECONDS","150")),

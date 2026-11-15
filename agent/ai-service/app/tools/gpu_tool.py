@@ -126,6 +126,10 @@ class GpuTool:
             server_id, required_memory_bytes, gpu_count
         )
 
+    def get_domain_tools(self, names) -> list:
+        """Filter the existing registry without changing tool implementation or access checks."""
+        return [tool for tool in self.get_tools() if tool.name in names]
+
     def get_tools(self) -> list:
         """Return LangChain tools ready for ``model.bind_tools(...)``."""
 

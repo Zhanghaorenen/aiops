@@ -62,9 +62,14 @@ class GraphAgent:
     """
 
     def __init__(self, llm, server_tools: ServerTool, gpu_tools: GpuTool,
-                 max_rounds: int = 4, rag_tools=None, memory_recall=None):
+                 max_rounds: int = 4, rag_tools=None, memory_recall=None,
+                 max_tool_calls: int = MAX_TOTAL_TOOL_CALLS, deduplicate_calls: bool = False):
         if not 1 <= max_rounds <= 8:
             raise ValueError("max_rounds must be between 1 and 8")
+        if not 1<=max_tool_calls<=MAX_TOTAL_TOOL_CALLS:
+            raise ValueError("Invalid tool budget")
+        self.max_tool_calls=max_tool_calls
+        self.deduplicate_calls=deduplicate_calls
         self.llm = llm
         self.memory_recall = memory_recall
         self.max_rounds = max_rounds
@@ -100,10 +105,10 @@ class GraphAgent:
         }}
 
     @staticmethod
-    def _wrap_tool(source) -> StructuredTool:
+    def _wrap_tool(source, event_context=None) -> StructuredTool:
         async def invoke(**arguments):
             writer = get_stream_writer()
-            writer({"type": "tool_start", "name": source.name})
+            writer({"type": "tool_start", "name": source.name, **(event_context or {})})
             try:
                 model_fields = source.args_schema.model_fields if source.args_schema else {}
                 fields = set(model_fields)
@@ -126,10 +131,10 @@ class GraphAgent:
                 if len(output) > MAX_TOOL_RESULT_LENGTH:
                     output = json.dumps({"ok": False, "error": "tool_result_too_large",
                                          "detail": "结果过长，无法可靠分析"}, ensure_ascii=False)
-                writer({"type": "tool_end", "name": source.name, "ok": True})
+                writer({"type": "tool_end", "name": source.name, "ok": True, **(event_context or {})})
                 return output
             except Exception as error:
-                writer({"type": "tool_end", "name": source.name, "ok": False})
+                writer({"type": "tool_end", "name": source.name, "ok": False, **(event_context or {})})
                 return GraphAgent._handle_tool_error(error)
 
         return StructuredTool.from_function(
@@ -178,11 +183,11 @@ class GraphAgent:
         used = state.get('tools_used', 0)
         failed = dict(state.get('failed_calls', {}))
         outputs = []
-        if used + len(calls) > MAX_TOTAL_TOOL_CALLS:
+        if used + len(calls) > self.max_tool_calls:
             return {'messages': [ToolMessage(tool_call_id=c['id'], name=c['name'], content=json.dumps({
                 'ok': False, 'error': 'tool_budget_exceeded',
                 'detail': '本批未执行；请明确说明未完成部分，不得声称查询成功。'})) for c in calls],
-                'tools_used': MAX_TOTAL_TOOL_CALLS, 'tool_rounds': self.max_rounds}
+                'tools_used': self.max_tool_calls, 'tool_rounds': self.max_rounds}
         node = ToolNode(self.execution_tools, handle_tool_errors=self._handle_tool_error)
         for offset in range(0, len(calls), MAX_PARALLEL_TOOLS):
             batch = calls[offset:offset + MAX_PARALLEL_TOOLS]
@@ -198,7 +203,7 @@ class GraphAgent:
                 for c, message in zip(active, part['messages']):
                     outputs.append(message)
                     try:
-                        if json.loads(message.content).get('ok') is False:
+                        if self.deduplicate_calls or json.loads(message.content).get('ok') is False:
                             failed[c['name'] + json.dumps(c['args'], sort_keys=True)] = message.content
                     except (ValueError, AttributeError):
                         pass
@@ -209,7 +214,7 @@ class GraphAgent:
     async def _assistant_node(self, state: GraphState) -> dict:
         messages = state["messages"]
         can_call = (state.get('tool_rounds', 0) < self.max_rounds
-                    and state.get('tools_used', 0) < MAX_TOTAL_TOOL_CALLS)
+                    and state.get('tools_used', 0) < self.max_tool_calls)
         offered_tools = self.openai_tools if can_call else None
         if not can_call:
             messages = [*messages, SystemMessage(content='工具预算已耗尽。只能总结已获得的证据，明确列出失败或未完成部分；不要声称这些查询成功，不再调用工具。')]

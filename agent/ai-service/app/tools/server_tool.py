@@ -20,6 +20,10 @@ class ServerTool:
     async def get_server_resource_usage(self, server_id: int) -> dict:
         return await self.server_manager.get_resource_usage(server_id)
 
+    def get_domain_tools(self, names) -> list:
+        """Filter the existing registry without changing tool implementation or access checks."""
+        return [tool for tool in self.get_tools() if tool.name in names]
+
     def get_tools(self) -> list:
         """Return LangChain tools that can be passed to a model or ToolNode."""
 
