@@ -1,7 +1,8 @@
 """Read-only adapter to existing Spring Boot user APIs, scoped to one user JWT."""
 
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
 
 from ..config import http_url
 
@@ -32,12 +33,20 @@ class PlatformClient:
         response = await self.client.get(path.lstrip("/"), params=params)
         response.raise_for_status()
         try:
+            self._clock_offset = parsedate_to_datetime(response.headers['date']) - datetime.now(timezone.utc)
+        except (KeyError, ValueError, TypeError):
+            pass
+        try:
             data = response.json()
         except ValueError as exc:
             raise PlatformProtocolError("平台返回了无效 JSON") from exc
         if not isinstance(data, expected):
             raise PlatformProtocolError("平台返回的数据结构不正确")
         return data
+
+    def server_now(self):
+        """HTTP server clock, not a collector's potentially skewed sampledAt."""
+        return datetime.now(timezone.utc) + getattr(self, '_clock_offset', timedelta())
 
     @staticmethod
     def _server_id(value: int) -> int:
@@ -61,6 +70,19 @@ class PlatformClient:
 
     async def get_active_workloads(self, server_id: int):
         return await self._get(f"/api/servers/{self._server_id(server_id)}/training/workloads", list)
+
+    async def get_resource_presets(self, server_id: int):
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/resource-presets", list)
+
+    async def analyze_active_workload(self, server_id: int, run_id: str | None = None, snapshot_id: int | None = None, pid: int | None = None):
+        from uuid import UUID
+        if run_id:
+            if snapshot_id is not None or pid is not None:
+                raise ValueError('运行 ID 与快照进程参数不能混用')
+            params = {'runId': str(UUID(run_id))}
+        else:
+            params = {'snapshotId': self._server_id(snapshot_id), 'pid': self._server_id(pid)}
+        return await self._get(f"/api/servers/{self._server_id(server_id)}/training/workload-analysis", dict, params)
 
     async def get_workload_profile(self, server_id: int, run_id: str):
         from uuid import UUID
@@ -273,6 +295,14 @@ class PlatformClient:
 
     async def get_training_jobs(self, server_id: int) -> list[dict]:
         return await self._get(f"/api/servers/{self._server_id(server_id)}/training/jobs", list)
+
+    async def get_resource_guard_status(self, server_id: int) -> dict:
+        return await self._get(f'/api/servers/{self._server_id(server_id)}/resource-guard', dict)
+
+    async def request_resource_relief(self, server_id: int) -> dict:
+        response=await self.client.post(f'api/servers/{self._server_id(server_id)}/resource-guard/check')
+        response.raise_for_status()
+        return response.json()
 
     async def get_training_analysis(self, server_id: int, job_id: int) -> dict:
         if isinstance(job_id, bool) or not isinstance(job_id, int) or job_id <= 0:

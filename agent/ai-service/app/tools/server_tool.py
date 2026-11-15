@@ -40,7 +40,7 @@ class ServerTool:
 
         @tool
         async def list_training_jobs(server_id: int) -> list[dict]:
-            """查询授权服务器的共享训练任务、所有者及状态；不会启动训练。"""
+            """查询已登记的资源计划；服务器实际运行任务优先使用 get_active_workloads，无需先登记。"""
             return await self.server_manager.client.get_training_jobs(server_id)
 
         @tool
@@ -65,6 +65,22 @@ class ServerTool:
                 'confirmed': row.get('run', {}).get('confirmed'),
                 'job_id': row.get('run', {}).get('job_id'),
             } for row in rows]
+
+        @tool
+        async def analyze_active_workload(server_id: int, run_id: str | None = None, snapshot_id: int | None = None, pid: int | None = None) -> dict:
+            """直接分析已运行 GPU 任务，不要求登记训练计划。提供 run_id；缺少稳定身份时提供 snapshot_id 和 pid。返回真实指标、瓶颈信号及缺失证据。"""
+            report = await self.server_manager.client.analyze_active_workload(server_id, run_id, snapshot_id, pid)
+            result = {key: report.get(key) for key in ('serverId', 'runId', 'displayName', 'sampledAt', 'fresh', 'resources', 'observations', 'missingEvidence', 'conclusion', 'metricScope', 'prediction')}
+            profile = report.get('profile', {})
+            result['profile'] = {key: profile.get(key) for key in ('confidence', 'runCount', 'sampleCount', 'gpuMemoryBytes', 'rssEstimateBytes', 'cpuPercent')}
+            return result
+
+        @tool
+        async def get_resource_presets(server_id: int) -> dict:
+            """查询当前用户的常用资源画像和单次观测参考，用于免手填估算。数值由后端统计计算；同名 python 进程不代表同配置，多卡记录不能当成单卡计划。"""
+            presets = await self.server_manager.client.get_resource_presets(server_id)
+            keys = ('id', 'sourceRunId', 'label', 'source', 'confidence', 'runCount', 'sampleCount', 'sampledAt', 'suggested', 'multipleGpus', 'basis', 'missingEvidence')
+            return {'presets': [{key: item.get(key) for key in keys} for item in presets[:5]], 'totalCount': len(presets), 'truncated': len(presets) > 5}
 
         @tool
         async def get_workload_profile(server_id: int, run_id: str) -> dict:
@@ -93,8 +109,19 @@ class ServerTool:
             """仅在用户要求回顾偏好或已确认经验时查询本人的长期记忆；记忆不代表实时资源。"""
             return await self.server_manager.client.get_private_memories()
 
-        return [list_servers, get_server_status, get_server_resource_usage, list_training_jobs, analyze_training_contention,
-                get_active_workloads, get_workload_profile, estimate_available_capacity, predict_workload_completion,
+        @tool
+        async def get_resource_guard_status(server_id: int) -> dict:
+            """读取服务器资源保护策略、采集端本地授权状态和实际处置审计。没有回执不能声称进程已结束。"""
+            status=await self.server_manager.client.get_resource_guard_status(server_id)
+            return {**status,'events':status.get('events',[])[:5]}
+
+        @tool
+        async def request_resource_relief(server_id: int) -> dict:
+            """仅管理员可请求一次资源保护检查，不直接结束进程。无PID/命令参数；本地已启用策略仍须满足持续内存压力和保护规则。返回requested不代表执行成功。"""
+            return await self.server_manager.client.request_resource_relief(server_id)
+
+        return [get_resource_guard_status, request_resource_relief, list_servers, get_server_status, get_server_resource_usage, list_training_jobs, analyze_training_contention,
+                get_active_workloads, analyze_active_workload, get_resource_presets, get_workload_profile, estimate_available_capacity, predict_workload_completion,
                 search_similar_incidents, get_private_memories]
 
 

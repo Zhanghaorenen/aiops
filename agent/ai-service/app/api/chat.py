@@ -28,6 +28,31 @@ router = APIRouter(prefix="/api", tags=["AI 对话"])
 auth_scheme = HTTPBearer(auto_error=False)
 
 
+def get_limiter(request, settings):
+    from ..redis_support import ChatRateLimiter
+    if request.app.state.chat_limiter is None:
+        request.app.state.chat_limiter = ChatRateLimiter(settings)
+    return request.app.state.chat_limiter
+
+
+@router.get('/ai/redis/status')
+async def redis_status(request: Request,
+                       credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(auth_scheme)]):
+    if credentials is None:
+        raise HTTPException(401, '需要用户登录凭证')
+    settings = get_settings(request)
+    platform = request.app.state.platform_factory(settings.backend_url, credentials.credentials, settings.backend_timeout)
+    try:
+        await platform.get_current_user()
+        return await get_limiter(request, settings).stats()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(exc.response.status_code, '用户凭证无效') from exc
+    except (httpx.RequestError, PlatformProtocolError) as exc:
+        raise HTTPException(502, '无法验证用户身份') from exc
+    finally:
+        await platform.close()
+
+
 def get_settings(request: Request) -> Settings:
     try:
         return request.app.state.settings or Settings.from_env()
@@ -45,7 +70,8 @@ async def chat(payload: ChatRequest, request: Request,
         platform = request.app.state.platform_factory(settings.backend_url, credentials.credentials, settings.backend_timeout)
         stack.push_async_callback(platform.close)
         try:
-            await platform.get_current_user()
+            user = await platform.get_current_user()
+            await get_limiter(request, settings).check(user)
             try:
                 settings.require_llm()
             except ValueError as exc:
@@ -93,6 +119,17 @@ async def chat_stream(payload: ChatRequest, request: Request,
         raise HTTPException(status_code=401, detail="需要用户登录凭证",
                             headers={"WWW-Authenticate": "Bearer"})
     settings = get_settings(request)
+    # Complete identity validation and limiting BEFORE sending HTTP 200 / SSE headers.
+    preflight = request.app.state.platform_factory(settings.backend_url, credentials.credentials, settings.backend_timeout)
+    try:
+        user = await preflight.get_current_user()
+        await get_limiter(request, settings).check(user)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(exc.response.status_code, '用户凭证无效或无权访问') from exc
+    except (httpx.RequestError, PlatformProtocolError) as exc:
+        raise HTTPException(502, '无法验证用户身份') from exc
+    finally:
+        await preflight.close()
     try:
         settings.require_llm()
     except ValueError as exc:

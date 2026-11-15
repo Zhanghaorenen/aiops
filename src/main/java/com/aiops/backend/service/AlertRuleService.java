@@ -12,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AlertRuleService {
+  @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.redis.NotificationEvents notificationEvents;
   public record PresetRequest(
       @NotNull @Size(min = 1, max = 100) List<@NotNull Long> serverIds,
       @NotBlank String presetKey,
@@ -266,5 +267,6 @@ public class AlertRuleService {
         access.currentUser().getId(),
         id);
     access.audit(cluster, "ALERT_ACKNOWLEDGE", id, "人工确认不代表指标已经恢复");
+    notificationEvents.clusterAfterCommit(cluster);
   }
 }

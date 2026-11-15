@@ -7,7 +7,8 @@ from langchain_core.documents import Document
 from qdrant_client import models
 
 
-class IncidentMemorySearch:
+
+class IncidentMemorySearch:  ## 为已授权、已验证案例建立向量存储
     def __init__(self, platform, settings, resources, store=None):
         self.platform, self.settings, self.resources = platform, settings, resources
         self.store = store

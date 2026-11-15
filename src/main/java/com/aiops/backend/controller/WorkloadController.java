@@ -20,7 +20,7 @@ public class WorkloadController {
   @GetMapping("/workloads")
   public Object list(
       @PathVariable long serverId, @RequestParam(defaultValue = "true") boolean active) {
-    return workloads.list(serverId, active);
+    return workloads.discoverAndList(serverId, active);
   }
 
   @GetMapping("/workloads/{id}")

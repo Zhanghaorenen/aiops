@@ -2,6 +2,12 @@
 
 from .gpu_manager import GPUManager
 from langchain.tools import tool
+from datetime import datetime, timezone, timedelta
+from typing import Literal
+
+HistoryMetric = Literal['utilization', 'memory_utilization', 'gpu_memory_total',
+                        'gpu_memory_used', 'gpu_memory_free', 'temperature',
+                        'power_usage', 'fan_speed', 'clock_speed']
 
 
 class GpuTool:
@@ -91,6 +97,23 @@ class GpuTool:
         """按温度、显存占用等最新指标检查单卡健康状态。"""
         return await self.gpu_manager.analyze_gpu_health(server_id, gpu_id)
 
+    async def get_recent_gpu_history(self, server_id: int, gpu_id: int,
+                                     metric_name: HistoryMetric, last_minutes: int = 30) -> dict:
+        if type(last_minutes) is not int or not 1 <= last_minutes <= 1440:
+            raise ValueError('last_minutes must be 1..1440')
+        clock = getattr(self.gpu_manager.client, 'server_now', None)
+        end = (clock() if callable(clock) else datetime.now(timezone.utc)) - timedelta(seconds=2)
+        start = end - timedelta(minutes=last_minutes)
+        samples = await self.get_gpu_history(server_id, gpu_id, metric_name,
+                                             start.isoformat(), end.isoformat())
+        values = [s['value'] for s in samples if isinstance(s.get('value'), (int, float))]
+        return {'status': 'ok' if samples else 'no_history', 'server_id':server_id,
+                'gpu_index':gpu_id, 'metric_name':metric_name, 'start_time':start.isoformat(),
+                'end_time':end.isoformat(), 'sample_count':len(samples), 'samples':samples,
+                'summary': {'minimum':min(values), 'maximum':max(values),
+                            'first':values[0], 'last':values[-1]} if values else None,
+                'limits':'Only observations in this time window; sparse samples do not establish a continuous trend.'}
+
     async def compare_gpu_load(self, server_id: int) -> dict:
         """比较同一服务器多张 GPU 的利用率并识别负载偏斜。"""
         return await self.gpu_manager.compare_gpu_load(server_id)
@@ -132,7 +155,7 @@ class GpuTool:
         async def get_gpu_history(
             server_id: int,
             gpu_id: int,
-            metric_name: str,
+            metric_name: HistoryMetric,
             start_time: str,
             end_time: str,
             limit: int = 500,
@@ -141,6 +164,12 @@ class GpuTool:
             return await self.get_gpu_history(
                 server_id, gpu_id, metric_name, start_time, end_time, limit
             )
+
+        @tool
+        async def get_recent_gpu_history(server_id: int, gpu_id: int,
+                                         metric_name: HistoryMetric, last_minutes: int = 30) -> dict:
+            """查询最近N分钟GPU历史，程序按平台UTC时间计算窗口；相对时间优先使用此工具，不猜日期。"""
+            return await self.get_recent_gpu_history(server_id, gpu_id, metric_name, last_minutes)
 
         @tool
         async def analyze_gpu_health(server_id: int, gpu_id: int) -> dict:
@@ -167,6 +196,7 @@ class GpuTool:
             get_gpu_overview,
             get_gpu_processes,
             get_gpu_history,
+            get_recent_gpu_history,
             analyze_gpu_health,
             compare_gpu_load,
             recommend_gpu_placement,

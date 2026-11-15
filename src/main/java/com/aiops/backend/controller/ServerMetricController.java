@@ -18,6 +18,7 @@ import com.aiops.backend.repository.NodeRepository;
 @RestController
 @RequestMapping("/api/servers/{nodeId}/metrics")
 public class ServerMetricController {
+    @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.service.MonitoringQueryService monitoring;
     private final NodeRepository nodes;
     private final com.aiops.backend.service.ClusterPermissionService access;
     private final HostMetricSampleRepository metrics;
@@ -29,8 +30,7 @@ public class ServerMetricController {
     @GetMapping("/latest")
     public HostMetricSampleEntity latest(@PathVariable Long nodeId) {
         ensureNode(nodeId);
-        return metrics.findTopByNodeIdOrderByCollectedAtDescIdDesc(nodeId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "暂无监控数据"));
+        return monitoring.latest(nodeId);
     }
 
     @GetMapping

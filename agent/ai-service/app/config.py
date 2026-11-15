@@ -35,12 +35,24 @@ class Settings:
     qdrant_key: str = field(default="", repr=False)
     rag_chunk_size: int = 1000
     rag_chunk_overlap: int = 150
+    redis_enabled: bool = True
+    redis_host: str = "127.0.0.1"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: str = field(default="", repr=False)
+    redis_timeout: float = 0.5
+    redis_key_prefix: str = "aiops:"
+    chat_rate_per_minute: int = 20
 
     embedding_device: str = 'cpu'
     embedding_batch_size: int = 16
     rag_vector_schema_version: str = '2'
 
     def __post_init__(self):
+        if not self.redis_key_prefix.strip() or not 1 <= self.redis_port <= 65535 or not 0 <= self.redis_db <= 15:
+            raise ValueError('INVALID_REDIS_CONFIGURATION')
+        if not 0 < self.redis_timeout <= 2 or not 1 <= self.chat_rate_per_minute <= 10000:
+            raise ValueError('INVALID_REDIS_LIMIT_CONFIGURATION')
         import re
         if not re.fullmatch(r'cpu|cuda(?::[0-9]+)?|mps', self.embedding_device):
             raise ValueError('INVALID_EMBEDDING_DEVICE')
@@ -54,7 +66,18 @@ class Settings:
     @classmethod
     def from_env(cls):
         llm_url = os.getenv("AIOPS_LLM_BASE_URL", "").strip()
+        redis_enabled = os.getenv('AIOPS_REDIS_ENABLED', 'true').strip().lower()
+        if redis_enabled not in {'true', 'false'}:
+            raise ValueError('AIOPS_REDIS_ENABLED must be true or false')
         return cls(
+            redis_enabled=redis_enabled == 'true',
+            redis_host=os.getenv('AIOPS_REDIS_HOST', '127.0.0.1'),
+            redis_port=int(os.getenv('AIOPS_REDIS_PORT', '6379')),
+            redis_db=int(os.getenv('AIOPS_REDIS_DB', '0')),
+            redis_password=os.getenv('AIOPS_REDIS_PASSWORD', ''),
+            redis_timeout=float(os.getenv('AIOPS_REDIS_TIMEOUT_SECONDS', '0.5')),
+            redis_key_prefix=os.getenv('AIOPS_REDIS_KEY_PREFIX', 'aiops:'),
+            chat_rate_per_minute=int(os.getenv('AIOPS_CHAT_RATE_PER_MINUTE', '20')),
             backend_url=http_url(os.getenv("AIOPS_BACKEND_URL", "http://127.0.0.1:8080").strip(), "AIOPS_BACKEND_URL"),
             llm_base_url=http_url(llm_url, "AIOPS_LLM_BASE_URL") if llm_url else "",
             llm_model=os.getenv("AIOPS_LLM_MODEL", "").strip(),

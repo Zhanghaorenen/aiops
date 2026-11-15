@@ -28,7 +28,8 @@ public class AgentAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         if ("/api/agent/heartbeat".equals(request.getRequestURI())
-                || "/api/agent/metrics".equals(request.getRequestURI())) {
+                || "/api/agent/metrics".equals(request.getRequestURI())
+                || "/api/agent/resource-guard/sync".equals(request.getRequestURI())) {
             String header = request.getHeader("Authorization");
             if (header != null && header.startsWith("Bearer ")) {
                 OpsAgentEntity agent = agentAccessService.authenticate(header.substring(7));

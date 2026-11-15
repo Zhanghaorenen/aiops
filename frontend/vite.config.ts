@@ -18,6 +18,10 @@ export default defineConfig({
         target: process.env.AIOPS_AI_PROXY_TARGET || 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      '/api/ai/redis': {
+        target: process.env.AIOPS_AI_PROXY_TARGET || 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
 
       // 其他业务请求仍然转发给 Spring Boot
       '/api': {

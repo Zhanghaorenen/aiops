@@ -21,7 +21,7 @@ SERVER = {"id": 41, "name": "unit-host", "status": "ONLINE", "lastSeenAt": "2026
 SAMPLE = {"nodeId": 41, "cpuPercent": 56.2, "memoryPercent": 40.0, "diskPercent": 20.0,
           "memoryTotalBytes": 1000, "memoryUsedBytes": 400, "diskTotalBytes": 2000,
           "diskUsedBytes": 400, "collectedAt": "2026-10-27T00:00:00Z", "receivedAt": "2026-10-27T00:00:01Z"}
-CONFIG = Settings("http://platform.test", "http://model.test/v1", "unit-model", "test-only-key")
+CONFIG = Settings("http://platform.test", "http://model.test/v1", "unit-model", "test-only-key", redis_enabled=False)
 
 
 def call(name, arguments=None, identifier="call-1"):
@@ -253,11 +253,14 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("test-only-key", response.text)
         self.assertTrue(self.models[0].client.is_closed())
 
-    async def test_loop_limit_returns_508(self):
-        async with self.build([completion(calls=[call("list_servers")])] * 2, settings=replace(CONFIG, max_rounds=2)) as client:
+    async def test_loop_limit_allows_one_evidence_summary_without_tools(self):
+        replies = [completion(calls=[call("list_servers")])] * 2 + [completion("工具预算已耗尽；未完成部分无法确认。")]
+        async with self.build(replies, settings=replace(CONFIG, max_rounds=2)) as client:
             response = await client.post("/api/chat", headers={"Authorization": "Bearer valid"}, json={"question": "q"})
-        self.assertEqual(response.status_code, 508)
-        self.assertEqual(len(self.model_requests), 2)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('未完成', response.json()['answer'])
+        self.assertEqual(len(self.model_requests), 3)
+        self.assertNotIn('tools', self.model_requests[-1])
 
     async def test_history_uses_existing_endpoint_and_query_names(self):
         platform = PlatformClient(CONFIG.backend_url, "valid", transport=httpx.MockTransport(self.backend))
@@ -303,7 +306,7 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
             self.backend_requests.append(request)
             token = request.headers["Authorization"]
             if request.url.path == "/api/auth/me":
-                return httpx.Response(200, json={"username": token})
+                return httpx.Response(200, json={"id": 1 if token.endswith("user-a") else 2, "username": token})
             return httpx.Response(200, json={**SAMPLE, "cpuPercent": 10 if token.endswith("user-a") else 90})
 
         def model(request, body):

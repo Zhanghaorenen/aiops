@@ -10,6 +10,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons-vue'
 import { useWorkspaceStore } from '../stores/workspace'
+import { useRoute } from 'vue-router'
 import {
   characterCount,
   QUESTION_LIMIT,
@@ -47,6 +48,21 @@ const {
   sessionId: sessionId.value,
 }))
 const messageContainer = ref<HTMLElement | null>(null)
+const route = useRoute()
+watch(
+  () => route?.query.question,
+  (question) => {
+    if (
+      typeof question === 'string' &&
+      question.trim() &&
+      characterCount(question.trim()) <= QUESTION_LIMIT &&
+      !sending.value
+    )
+      input.value = question.trim()
+  },
+  { immediate: true },
+)
+
 const confirmation = ref<'new' | 'clear' | null>(null)
 const unavailable = computed(() => store.demo || !store.token)
 const inputLength = computed(() => characterCount(input.value.trim()))

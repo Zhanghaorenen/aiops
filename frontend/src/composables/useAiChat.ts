@@ -168,6 +168,8 @@ export function useAiChat(
             compare_gpu_load: '比较 GPU 负载',
             recommend_gpu_placement: '生成 GPU 调度建议',
             get_active_workloads: '查询运行任务',
+            analyze_active_workload: '分析已运行任务',
+            get_resource_presets: '查询历史资源建议',
             get_workload_profile: '读取历史资源画像',
             estimate_available_capacity: '计算资源预算',
             predict_workload_completion: '预测完成时间',

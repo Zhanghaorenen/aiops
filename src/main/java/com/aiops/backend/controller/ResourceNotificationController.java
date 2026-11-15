@@ -9,6 +9,16 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/resources")
 public class ResourceNotificationController {
+  @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.redis.NotificationEvents events;
+  @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.service.ClusterPermissionService access;
+
+  @GetMapping(value="/notifications/stream",produces="text/event-stream")
+  public org.springframework.web.servlet.mvc.method.annotation.SseEmitter stream(jakarta.servlet.http.HttpServletResponse response) {
+    long user=access.currentUser().getId();
+    response.setHeader("Cache-Control","no-cache");
+    response.setHeader("X-Accel-Buffering","no");
+    return events.open(user);
+  }
   private final ResourceNotificationService service;
 
   public ResourceNotificationController(ResourceNotificationService service) {

@@ -23,6 +23,15 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @Transactional(readOnly = true)
 public class GpuManagerServiceImpl implements GpuManagerService {
+  @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.redis.ResourceCache cache;
+  public record GpuData(GpuSnapshotEntity snapshot, List<GpuSampleEntity> samples) {}
+  private GpuData latestData(Long serverId) {
+    validateServer(serverId);
+    return cache.get(serverId,"gpu",GpuData.class,() -> {
+      var snapshot=latestSnapshot(serverId);
+      return new GpuData(snapshot,samples.findAllBySnapshotId(snapshot.getId()));
+    });
+  }
   private static final int MAX_HISTORY_LIMIT = 1440;
 
   private final NodeRepository nodes;
@@ -49,8 +58,9 @@ public class GpuManagerServiceImpl implements GpuManagerService {
 
   @Override
   public Map<String, Object> getServerGpus(Long serverId) {
-    GpuSnapshotEntity snapshot = latestSnapshot(serverId);
-    List<GpuSampleEntity> gpuSamples = samples.findAllBySnapshotId(snapshot.getId());
+    GpuData data = latestData(serverId);
+    GpuSnapshotEntity snapshot = data.snapshot();
+    List<GpuSampleEntity> gpuSamples = data.samples();
 
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("serverId", serverId);
@@ -83,8 +93,8 @@ public class GpuManagerServiceImpl implements GpuManagerService {
   @Override
   public Map<String, Object> getGpuLatest(Long serverId, Integer gpuId) {
     validateGpu(serverId, gpuId);
-    GpuSnapshotEntity snapshot = latestSnapshot(serverId);
-    GpuSampleEntity sample = samples.findBySnapshotIdAndGpuIndex(snapshot.getId(), gpuId);
+    GpuSampleEntity sample = latestData(serverId).samples().stream()
+        .filter(g -> gpuId.equals(g.getGpuIndex())).findFirst().orElse(null);
     if (sample == null) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "最新 GPU 快照中不存在 GPU index=" + gpuId);
     }
@@ -93,8 +103,9 @@ public class GpuManagerServiceImpl implements GpuManagerService {
 
   @Override
   public Map<String, Object> getServerGpuOverview(Long serverId) {
-    GpuSnapshotEntity snapshot = latestSnapshot(serverId);
-    List<GpuSampleEntity> gpuSamples = samples.findAllBySnapshotId(snapshot.getId());
+    GpuData data = latestData(serverId);
+    GpuSnapshotEntity snapshot = data.snapshot();
+    List<GpuSampleEntity> gpuSamples = data.samples();
     List<BigDecimal> utilization =
         gpuSamples.stream().map(GpuSampleEntity::getUtilizationPercent).toList();
     List<BigDecimal> memoryUtilization =

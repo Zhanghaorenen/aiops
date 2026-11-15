@@ -48,6 +48,7 @@ public class AgentAccessService {
   private final ClusterPermissionService access;
   private final com.aiops.backend.repository.ClusterRepository clusters;
   private final WorkloadService workloads;
+  @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.redis.ResourceCache resourceCache;
   private final SecureRandom random = new SecureRandom();
 
   public AgentAccessService(
@@ -208,6 +209,7 @@ public class AgentAccessService {
     metrics.save(saved);
     recordGpuSnapshot(agent, request, collectedAt, now);
     workloads.observe(agent.getNodeId());
+    resourceCache.invalidateAfterCommit(agent.getNodeId());
     return saved;
   }
 

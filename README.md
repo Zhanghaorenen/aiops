@@ -27,7 +27,8 @@
 | 训练资源协同 | SHARED/EXCLUSIVE、整机 RAM 与 GPU 显存联合准入、安全预留、队列复查、生命周期与历史 |
 | 进程身份关联 | PID＋启动时间＋Linux 用户，避免 PID 复用误关联；可选 SDK 上报 Epoch/Step/吞吐 |
 | 告警与调查 | 预设 / 自定义规则、持续窗口、恢复阈值、去重；告警关联 Incident 后异步调查 |
-| AI 运维助手 | LangGraph 调度 LangChain 只读工具，SSE 输出文本与工具状态，查询沿用用户 JWT |
+| AI 运维助手 | LangGraph 调度监控工具，SSE 输出文本与工具状态；管理员可请求受控资源保护检查，沿用用户 JWT |
+| 内存资源保护 | 默认关闭；本地持续压力判定、业务UID授权、系统/平台排除、TERM→KILL、冷却与审计，见[部署与边界](docs/resource-guard.md) |
 | RAG 知识库 | 模板编辑、文档解析、分块与向量检索、重新索引、原文引用 |
 | 共享权限 | ADMIN/OPERATOR/VIEWER；用户 JWT 与独立 Agent Credential 分离 |
 
@@ -42,7 +43,7 @@ flowchart LR
     Web -->|用户 JWT · REST| API
     API --> DB[(MySQL · Flyway)]
     Web -->|用户 JWT · SSE| AI[FastAPI / LangGraph]
-    AI -->|同一用户身份 · 只读 Tools| API
+    AI -->|同一用户身份 · 监控查询或受控检查请求| API
     AI --> LLM[OpenAI 兼容接口]
     AI --> RAG[LangChain RAG<br/>本地 Embedding / Qdrant]
     API -->|数据库任务与租约| Worker[调查 Worker]
@@ -100,3 +101,7 @@ npm run typecheck && npm test && npm run build
 提交问题或改进前请阅读 [CONTRIBUTING](CONTRIBUTING.md)。安全问题按 [SECURITY](SECURITY.md) 处理，避免公开凭据、原始日志和私有文档。
 
 本项目采用 [MIT License](LICENSE)。依赖组件及模型权重遵循其自身许可；仓库不分发模型权重、服务器凭据或真实用户数据。
+
+## Redis 接入
+
+监控短缓存、Agent 用户限流、告警/资源通知实时刷新配置和验证见 [docs/redis.md](docs/redis.md)。

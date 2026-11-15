@@ -55,3 +55,8 @@ models/
 /docs/mybatis-plus-migration.md
 /docs/RAG知识库使用与源码指南.md
 /docs/database-design.md
+
+# Private evaluation evidence and generated verification bundles stay local.
+/tests/agent_eval/reports/
+/evaluations/
+/frontend/dist-verify/

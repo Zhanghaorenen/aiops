@@ -5,6 +5,7 @@ langgraph>=1.0,<2
 openai>=2,<3
 pydantic>=2.12,<3
 uvicorn>=0.35,<1
+redis>=5.2,<9
 
 # RAG parsing and offline local embeddings
 python-multipart>=0.0.20,<1

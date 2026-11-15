@@ -36,6 +36,15 @@ defineProps<{ name: string; data: Record<string, any> }>()
         <p>{{ data.limitations }}</p></template
       >
     </template>
+    <template v-else-if="name === 'analyze_active_workload'"
+      ><strong>运行任务分析</strong>
+      <p>{{ data.displayName }} · {{ formatTime(data.sampledAt) }}</p>
+      <p>{{ data.conclusion }}</p>
+      <p v-for="risk in data.observations" :key="risk">{{ risk }}</p>
+      <p v-for="missing in data.missingEvidence" :key="missing">
+        {{ missing }}
+      </p></template
+    >
     <template v-else-if="name === 'get_workload_profile'"
       ><strong>历史画像</strong>
       <p>

@@ -3,6 +3,7 @@ import { ref, reactive, watch, onBeforeUnmount } from 'vue'
 import { api, aiApi, errorMessage } from '../api'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatTime } from '../utils/format'
+import { useNotificationEvents } from '../composables/useNotificationEvents'
 
 const store = useWorkspaceStore()
 const memories = ref<any[]>([]),
@@ -172,6 +173,7 @@ watch(
   { immediate: true, flush: 'sync' },
 )
 onBeforeUnmount(() => revision++)
+useNotificationEvents(load)
 </script>
 <template>
   <a-alert v-if="store.demo" message="个人记录需要登录后使用" type="info" />

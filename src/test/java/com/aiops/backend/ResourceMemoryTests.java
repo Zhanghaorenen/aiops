@@ -27,6 +27,7 @@ class ResourceMemoryTests extends ClusterTestSupport {
   @Autowired AgentAccessService agents;
   @Autowired TrainingJobService jobs;
   @Autowired WorkloadService workloads;
+  @Autowired WorkloadAdvisorService advisor;
   @Autowired UserMemoryService memories;
   @Autowired ResourceNotificationService reminders;
 
@@ -544,5 +545,142 @@ class ResourceMemoryTests extends ClusterTestSupport {
     assertTrue(cases.get(0).get("candidate_cause").toString().contains("DataLoader"));
     assertTrue(cases.get(0).get("symptoms").toString().contains("host_metrics"));
     assertTrue(memories.cases(node.nodeId(), true).isEmpty());
+  }
+
+  private void removeDerivedRuns(long server) {
+    testJdbc.update(
+        "DELETE FROM ops_workload_sample WHERE run_id IN (SELECT id FROM ops_workload_run WHERE"
+            + " server_id=?)",
+        server);
+    testJdbc.update("DELETE FROM ops_workload_run WHERE server_id=?", server);
+  }
+
+  @Test
+  void alreadyReportedLegacyProcessesAppearWithoutRegistrationOrUid() {
+    var node = node();
+    Instant now = Instant.now();
+    String started = now.minusSeconds(100).toString();
+    sample(node, now, started, true, false);
+    removeDerivedRuns(node.nodeId());
+    testJdbc.update(
+        "UPDATE metric_gpu_process_sample SET details_json=? WHERE node_id=?",
+        new tools.jackson.databind.ObjectMapper()
+            .writeValueAsString(
+                Map.of("startedAt", started, "cpuPercent", 20, "memoryRssBytes", 1048576000)),
+        node.nodeId());
+    var rows = workloads.discoverAndList(node.nodeId(), true);
+    assertEquals(1, rows.size());
+    assertEquals("UID_UNAVAILABLE", rows.get(0).get("identityStatus"));
+    assertNotNull(rows.get(0).get("runId"));
+    var run = (Map<?, ?>) rows.get(0).get("run");
+    assertNull(run.get("user_id"), "配置了 UID 的映射不能被缺失 UID 的上报冒用");
+    assertEquals(
+        0,
+        testJdbc.queryForObject(
+            "SELECT COUNT(*) FROM ops_training_job j JOIN ops_gpu_usage u ON u.id=j.id WHERE"
+                + " u.server_id=?",
+            Integer.class,
+            node.nodeId()));
+    var report = advisor.analyze(node.nodeId(), rows.get(0).get("runId").toString(), null, null);
+    assertEquals(true, report.get("fresh"));
+    assertEquals(
+        20d, ((Number) ((Map<?, ?>) report.get("resources")).get("cpuPercent")).doubleValue());
+    assertEquals(1, workloads.discoverAndList(node.nodeId(), true).size(), "页面刷新不重复建立运行记录");
+  }
+
+  @Test
+  void missingStartTimeRemainsSnapshotOnlyButStillSupportsAnalysis() {
+    var node = node();
+    Instant now = Instant.now();
+    sample(node, now, now.minusSeconds(10).toString(), true, false);
+    removeDerivedRuns(node.nodeId());
+    testJdbc.update(
+        "UPDATE metric_gpu_process_sample SET details_json=? WHERE node_id=?",
+        "{\"cpuPercent\":25,\"memoryRssBytes\":1024}",
+        node.nodeId());
+    var row = workloads.discoverAndList(node.nodeId(), true).get(0);
+    assertNull(row.get("runId"));
+    assertEquals("START_TIME_MISSING", row.get("identityStatus"));
+    assertEquals(
+        0,
+        testJdbc.queryForObject(
+            "SELECT COUNT(*) FROM ops_workload_run WHERE server_id=?",
+            Integer.class,
+            node.nodeId()));
+    var report =
+        advisor.analyze(node.nodeId(), null, ((Number) row.get("snapshotId")).longValue(), 123L);
+    assertFalse(((List<?>) report.get("missingEvidence")).isEmpty());
+    assertFalse(report.containsKey("samples"));
+    assertEquals("UNAVAILABLE", ((Map<?, ?>) report.get("prediction")).get("confidence"));
+  }
+
+  @Test
+  void resourcePresetsArePrivateAndReturnTraceableNumbersInsteadOfDefaults() {
+    var node = node();
+    Instant now = Instant.now();
+    sample(node, now, now.minusSeconds(60).toString(), true, false);
+    String run = workloads.list(node.nodeId(), true).get(0).get("id").toString();
+    workloads.confirm(node.nodeId(), run, "TRAINING", "same", "env", null);
+    var preset = advisor.presets(node.nodeId()).get(0);
+    var fields = (Map<?, ?>) preset.get("suggested");
+    assertEquals("CONFIRMED_PROFILE", preset.get("source"));
+    assertEquals(3584d, ((Number) fields.get("expectedVramMb")).doubleValue());
+    assertTrue(((Number) fields.get("expectedRamMb")).doubleValue() > 0);
+    assertFalse(fields.containsKey("dataset"));
+    assertFalse(fields.containsKey("runConfiguration"));
+    assertTrue(((Map<?, ?>) preset.get("evidence")).containsKey("expectedVramMb"));
+    other();
+    assertTrue(advisor.presets(node.nodeId()).isEmpty());
+    assertThrows(ResponseStatusException.class, () -> advisor.suggestion(node.nodeId(), run));
+    var shared = advisor.analyze(node.nodeId(), run, null, null);
+    assertFalse(shared.containsKey("samples"));
+    assertEquals("UNAVAILABLE", ((Map<?, ?>) shared.get("profile")).get("confidence"));
+  }
+
+  @Test
+  void sameProcessNamesDoNotMergeUnconfirmedResourcePresets() {
+    var node = node();
+    Instant now = Instant.now();
+    sample(node, now, now.minusSeconds(100).toString(), true, false);
+    sample(node, now.plusSeconds(1), now.minusSeconds(50).toString(), true, false);
+    var presets = advisor.presets(node.nodeId());
+    assertEquals(2, presets.size());
+    assertNotEquals(presets.get(0).get("id"), presets.get(1).get("id"));
+    assertTrue(presets.stream().allMatch(p -> "OBSERVED_RUN".equals(p.get("source"))));
+  }
+
+  @Test
+  void missingResourcesStayUnknownInResourceSuggestions() {
+    var node = node();
+    Instant now = Instant.now();
+    sample(node, now, now.minusSeconds(10).toString(), true, false);
+    String run = workloads.list(node.nodeId(), true).get(0).get("id").toString();
+    testJdbc.update(
+        "UPDATE ops_workload_sample SET metrics_json=? WHERE run_id=?",
+        "{\"gpuMemoryBytes\":3221225472}",
+        run);
+    var source = advisor.suggestion(node.nodeId(), run);
+    assertFalse(((Map<?, ?>) source.get("suggested")).containsKey("expectedRamMb"));
+    assertTrue(source.get("missingEvidence").toString().contains("expectedRamMb"));
+  }
+
+  @Test
+  void archivedTrainingDoesNotHideAProcessStillOccupyingGpu() {
+    var node = node();
+    Instant now = Instant.now();
+    sample(node, now, now.minusSeconds(100).toString(), true, false);
+    String run = workloads.list(node.nodeId(), true).get(0).get("id").toString();
+    testJdbc.update(
+        "UPDATE ops_workload_run SET state='SUCCEEDED',ended_at=? WHERE id=?",
+        LocalDateTime.now(ZoneOffset.UTC),
+        run);
+    var row = workloads.discoverAndList(node.nodeId(), true).get(0);
+    assertNull(row.get("runId"));
+    assertEquals("SNAPSHOT_ONLY", row.get("identityStatus"));
+    var report =
+        advisor.analyze(node.nodeId(), null, ((Number) row.get("snapshotId")).longValue(), 123L);
+    assertEquals(true, report.get("fresh"));
+    assertFalse(report.get("conclusion").toString().contains("成功"));
+    assertFalse(report.get("missingEvidence").toString().contains("尚未取得进程启动时间"));
   }
 }

@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AlertEvaluationService {
+  @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.redis.NotificationEvents events;
   private final JdbcTemplate jdbc;
   private final AlertRuleEngine engine;
 
@@ -169,6 +170,7 @@ public class AlertEvaluationService {
               utc(d.observedAt()),
               evidence(metric, d),
               old.get("id"));
+        events.clusterAfterCommit(((Number)r.get("cluster_id")).longValue());
       } else if (d.firing() && Boolean.TRUE.equals(r.get("enabled"))) {
         var resolved =
             jdbc.queryForList(
@@ -193,6 +195,7 @@ public class AlertEvaluationService {
             utc(d.observedAt()),
             utc(d.observedAt()),
             evidence(metric, d));
+        events.clusterAfterCommit(((Number)r.get("cluster_id")).longValue());
       }
     }
   }

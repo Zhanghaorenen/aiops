@@ -118,6 +118,7 @@ public class TrainingJobService {
                 + " ops_gpu_usage u JOIN ops_training_job j ON j.id=u.id WHERE server_id=? ORDER BY"
                 + " u.id DESC LIMIT 500",
             server);
+    for (var row : rows) row.put("privateDetails", admin || number(row.get("user_id")) == user);
     for (var row : rows)
       if (!admin && number(row.get("user_id")) != user) {
         row.put("task_name", "共享训练任务");

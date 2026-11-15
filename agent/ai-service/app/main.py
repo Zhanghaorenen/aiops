@@ -17,17 +17,22 @@ def create_app(settings: Settings | None = None, platform_factory=PlatformClient
         try:
             yield
         finally:
-            await manager.close()
+            try:
+                await manager.close()
+            finally:
+                if application.state.chat_limiter is not None:
+                    await application.state.chat_limiter.close()
 
     application = FastAPI(lifespan=lifespan, title="AIOps AI Service", version="0.1.0", description="Central read-only diagnostics")
     application.state.rag_resources = manager
     application.state.settings = settings
     application.state.platform_factory = platform_factory
     application.state.llm_factory = llm_factory
+    application.state.chat_limiter = None
     import os
     origin = os.getenv("AIOPS_WEB_ALLOWED_ORIGIN", "http://localhost:5173")
     application.add_middleware(CORSMiddleware, allow_origins=[origin], allow_methods=["GET", "POST", "DELETE"],
-                               allow_headers=["Authorization", "Content-Type"])
+                               allow_headers=["Authorization", "Content-Type"], expose_headers=["Retry-After"])
     application.include_router(chat_router)
     from .api.knowledge import router as knowledge_router
     application.include_router(knowledge_router)

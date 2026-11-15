@@ -30,3 +30,23 @@ class TrainingToolsTests(unittest.IsolatedAsyncioTestCase):
         report=await names['analyze_training_contention'].ainvoke({'server_id':2,'job_id':7})
         self.assertEqual(report['observations'],['IO pressure'])
         self.assertEqual(report['missing'],['exit code'])
+
+
+    async def test_discovered_workload_analysis_and_presets_use_authenticated_read_only_paths(self):
+        requests=[]
+        def backend(request):
+            requests.append(request)
+            if request.url.path.endswith('resource-presets'):
+                return httpx.Response(200,json=[{'id':'p','suggested':{'expectedVramMb':3584},'source':'OBSERVED_RUN'}])
+            return httpx.Response(200,json={'serverId':2,'fresh':True,'resources':{},'observations':[], 'missingEvidence':[], 'samples':[{'private':'not-for-model'}]})
+        client=PlatformClient('http://platform.test','test-jwt',transport=httpx.MockTransport(backend))
+        try:
+            tools={t.name:t for t in ServerTool(SimpleNamespace(client=client)).get_tools()}
+            result=await tools['analyze_active_workload'].ainvoke({'server_id':2,'snapshot_id':9,'pid':123})
+            self.assertNotIn('samples',result)
+            presets=await tools['get_resource_presets'].ainvoke({'server_id':2})
+            self.assertEqual(presets['presets'][0]['suggested']['expectedVramMb'],3584)
+            self.assertEqual(requests[0].url.path,'/api/servers/2/training/workload-analysis')
+            self.assertEqual(requests[0].url.params['pid'],'123')
+            self.assertTrue(all(r.method=='GET' and r.headers['Authorization']=='Bearer test-jwt' for r in requests))
+        finally:await client.close()

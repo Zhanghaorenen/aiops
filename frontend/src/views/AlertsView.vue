@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { api, errorMessage } from '../api'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatTime } from '../utils/format'
+import { useNotificationEvents } from '../composables/useNotificationEvents'
 import IncidentsView from './IncidentsView.vue'
 import ResourceGauge from '../components/ResourceGauge.vue'
 const route = useRoute(),
@@ -63,12 +64,14 @@ const unresolved = computed(() =>
   events.value.filter((e) => e.status !== 'RESOLVED'),
 )
 async function load() {
-  if (store.demo) return
+  if (store.demo || !store.token) return
+  const token = store.token
   const [a, r, p] = await Promise.all([
     api.get('/api/alerts'),
     api.get('/api/alert-rules'),
     api.get('/api/alert-presets'),
   ])
+  if (token !== store.token || store.demo) return
   events.value = rows(a.data)
   rules.value = rows(r.data)
   presets.value = p.data
@@ -186,10 +189,7 @@ const filtered = computed(() =>
   events.value.filter((e) => !filter.value || e.status === filter.value),
 )
 onMounted(() => void run(load))
-const timer = setInterval(() => {
-  if (!busy.value) void run(load)
-}, 15000)
-onUnmounted(() => clearInterval(timer))
+useNotificationEvents(async () => { if (!busy.value) await run(load) })
 const columns = [
   { title: '事件', dataIndex: 'id' },
   { title: '服务器', dataIndex: 'server_id' },

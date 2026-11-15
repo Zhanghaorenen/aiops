@@ -98,7 +98,7 @@ public class WorkloadService {
       } catch (java.time.format.DateTimeParseException ignored) {
         /* 不完整的进程身份不建档。 */
       }
-      if (validTime && d.get("linuxUid") instanceof Number) {
+      if (validTime) {
         p.put("details", d);
         identities.put(p.get("pid").toString(), p);
       }
@@ -112,7 +112,8 @@ public class WorkloadService {
       while (seen.add(root.get("pid"))) {
         var rd = (Map<?, ?>) root.get("details");
         var parent = identities.get(String.valueOf(rd.get("parentPid")));
-        if (parent == null
+        if (!(d.get("linuxUid") instanceof Number)
+            || parent == null
             || !Objects.equals(
                 ((Map<?, ?>) parent.get("details")).get("linuxUid"), d.get("linuxUid"))) break;
         if (Instant.parse(((Map<?, ?>) parent.get("details")).get("startedAt").toString())
@@ -214,12 +215,14 @@ public class WorkloadService {
             processes);
       }
       var metrics = measure(processes, server, at);
-      if (jdbc.queryForObject(
-              "SELECT COUNT(*) FROM ops_workload_sample WHERE run_id=? AND snapshot_id=?",
-              Long.class,
-              id,
-              snapshotId)
-          == 0)
+      boolean newSample =
+          jdbc.queryForObject(
+                  "SELECT COUNT(*) FROM ops_workload_sample WHERE run_id=? AND snapshot_id=?",
+                  Long.class,
+                  id,
+                  snapshotId)
+              == 0;
+      if (newSample)
         jdbc.update(
             "INSERT INTO ops_workload_sample(run_id,snapshot_id,sampled_at,metrics_json)"
                 + " VALUES(?,?,?,?)",
@@ -230,7 +233,7 @@ public class WorkloadService {
       long samples =
           jdbc.queryForObject(
               "SELECT COUNT(*) FROM ops_workload_sample WHERE run_id=?", Long.class, id);
-      if (samples % 10 == 0) refreshProfile(id);
+      if (newSample && samples % 10 == 0) refreshProfile(id);
     }
     var host =
         jdbc.queryForList(
@@ -325,6 +328,7 @@ public class WorkloadService {
           if (value instanceof Map<?, ?> child
               && child.get("pid") != null
               && child.get("startedAt") != null
+              && d.get("linuxUid") instanceof Number
               && Objects.equals(child.get("linuxUid"), d.get("linuxUid")))
             memberByPid.putIfAbsent(child.get("pid"), child);
     }
@@ -457,8 +461,8 @@ public class WorkloadService {
         summary.put(k, r.get(k));
       var latest =
           jdbc.queryForList(
-              "SELECT metrics_json,sampled_at FROM ops_workload_sample WHERE run_id=? ORDER BY"
-                  + " sampled_at DESC LIMIT 1",
+              "SELECT metrics_json,sampled_at,snapshot_id FROM ops_workload_sample WHERE run_id=?"
+                  + " ORDER BY sampled_at DESC LIMIT 1",
               r.get("id"));
       if (!latest.isEmpty()) {
         var metrics =
@@ -476,10 +480,150 @@ public class WorkloadService {
           Duration.between(TrainingJobService.instant(r.get("last_seen")), Instant.now())
                   .getSeconds()
               <= 90);
+      summary.put("runId", r.get("id"));
+      summary.put("pid", r.get("root_pid"));
+      summary.put("identityStatus", r.get("linux_uid") == null ? "UID_UNAVAILABLE" : "TRACKED");
+      summary.put("displayName", "GPU 任务 · PID " + r.get("root_pid"));
+      if (!latest.isEmpty()) {
+        var devices =
+            jdbc.queryForList(
+                "SELECT p.process_name,p.gpu_index,g.gpu_name FROM metric_gpu_process_sample p JOIN"
+                    + " metric_gpu_sample g ON g.snapshot_id=p.snapshot_id AND"
+                    + " g.gpu_index=p.gpu_index WHERE p.snapshot_id=? AND p.pid=? ORDER BY"
+                    + " p.gpu_index",
+                latest.get(0).get("snapshot_id"),
+                r.get("root_pid"));
+        if (!devices.isEmpty())
+          summary.put(
+              "displayName",
+              String.valueOf(devices.get(0).getOrDefault("process_name", "GPU 任务"))
+                  + " · PID "
+                  + r.get("root_pid"));
+        summary.put(
+            "gpuIndices", devices.stream().map(d -> d.get("gpu_index")).distinct().toList());
+        summary.put(
+            "gpuModels",
+            devices.stream()
+                .map(d -> d.get("gpu_name"))
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList());
+        if (summary.get("resources") instanceof Map<?, ?> metrics
+            && metrics.get("gpuMemoryByUuid") instanceof Map<?, ?> byUuid) {
+          var cards =
+              jdbc.queryForList(
+                  "SELECT gpu_index,gpu_uuid,gpu_name FROM metric_gpu_sample WHERE snapshot_id=?"
+                      + " ORDER BY gpu_index",
+                  latest.get(0).get("snapshot_id"));
+          var involved =
+              cards.stream().filter(card -> byUuid.containsKey(card.get("gpu_uuid"))).toList();
+          if (!involved.isEmpty()) {
+            summary.put(
+                "gpuIndices", involved.stream().map(card -> card.get("gpu_index")).toList());
+            summary.put(
+                "gpuModels",
+                involved.stream()
+                    .map(card -> card.get("gpu_name"))
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList());
+          }
+        }
+      }
       summary.put("completion", completionSummary(server, r.get("id").toString()));
       result.add(summary);
     }
     return result;
+  }
+
+  /** 页面和工具共用现有快照，兼容升级前已经上报的数据，不要求先登记任务。 */
+  @Transactional
+  public List<Map<String, Object>> discoverAndList(long server, boolean activeOnly) {
+    access.requireNode(server, ClusterPermission.GPU_VIEW);
+    var latest =
+        jdbc.queryForList(
+            "SELECT id,collected_at FROM metric_gpu_snapshot WHERE node_id=? ORDER BY collected_at"
+                + " DESC,id DESC LIMIT 1",
+            server);
+    if (!latest.isEmpty() && fresh(latest.get(0).get("collected_at"))) observe(server);
+    var rows = new ArrayList<>(list(server, activeOnly));
+    if (latest.isEmpty()) return rows;
+    var snapshot = latest.get(0);
+    // 缺少启动时间时只能展示这个快照，不能伪造稳定身份或混入历史画像。
+    var missing =
+        jdbc.queryForList(
+            "SELECT p.*,g.gpu_name FROM metric_gpu_process_sample p JOIN metric_gpu_sample g ON"
+                + " g.snapshot_id=p.snapshot_id AND g.gpu_index=p.gpu_index WHERE p.snapshot_id=?"
+                + " ORDER BY p.pid,p.gpu_index",
+            snapshot.get("id"));
+    var covered = new HashSet<Long>();
+    for (var sample :
+        jdbc.queryForList(
+            "SELECT s.metrics_json FROM ops_workload_sample s JOIN ops_workload_run r ON"
+                + " r.id=s.run_id WHERE r.server_id=? AND s.snapshot_id=?"
+                + (activeOnly ? " AND r.state IN ('RUNNING','MISSING')" : ""),
+            server,
+            snapshot.get("id"))) {
+      if (MetricDetails.decode((String) sample.get("metrics_json")).get("members")
+          instanceof List<?> members)
+        for (Object value : members)
+          if (value instanceof Map<?, ?> member && member.get("pid") instanceof Number p)
+            covered.add(p.longValue());
+    }
+    var fallback = new LinkedHashMap<Long, Map<String, Object>>();
+    for (var p : missing) {
+      var d = MetricDetails.decode((String) p.get("details_json"));
+      boolean stable = false;
+      try {
+        stable =
+            d.get("startedAt") instanceof String t
+                && !Instant.parse(t)
+                    .isAfter(
+                        TrainingJobService.instant(snapshot.get("collected_at")).plusSeconds(60));
+      } catch (java.time.format.DateTimeParseException ignored) {
+      }
+      if (stable && covered.contains(((Number) p.get("pid")).longValue())) continue;
+      long pid = ((Number) p.get("pid")).longValue();
+      final boolean knownStart = stable;
+      var row =
+          fallback.computeIfAbsent(
+              pid,
+              key -> {
+                var item = new LinkedHashMap<String, Object>();
+                item.put("id", "snapshot-" + snapshot.get("id") + "-" + pid);
+                item.put("runId", null);
+                item.put("pid", pid);
+                item.put("snapshotId", snapshot.get("id"));
+                item.put("state", "OBSERVED");
+                item.put("identityStatus", knownStart ? "SNAPSHOT_ONLY" : "START_TIME_MISSING");
+                item.put(
+                    "displayName",
+                    String.valueOf(p.getOrDefault("process_name", "GPU 进程")) + " · PID " + pid);
+                item.put("privateDetails", false);
+                item.put("fresh", fresh(snapshot.get("collected_at")));
+                item.put("sampledAt", snapshot.get("collected_at"));
+                item.put("gpuIndices", new ArrayList<Object>());
+                item.put("resources", new LinkedHashMap<String, Object>());
+                item.put("completion", Map.of("confidence", "UNAVAILABLE"));
+                return item;
+              });
+      ((List<Object>) row.get("gpuIndices")).add(p.get("gpu_index"));
+      var metrics = (Map<String, Object>) row.get("resources");
+      Object memory = p.get("gpu_memory_usage_bytes");
+      if (memory instanceof Number)
+        metrics.put("gpuMemoryBytes", Math.max(n(metrics.get("gpuMemoryBytes")), n(memory)));
+      for (String key :
+          List.of("cpuPercent", "memoryRssBytes", "readBytesPerSecond", "writeBytesPerSecond"))
+        if (d.get(key) instanceof Number)
+          metrics.put(key.equals("memoryRssBytes") ? "rssEstimateBytes" : key, d.get(key));
+    }
+    rows.addAll(fallback.values());
+    return rows;
+  }
+
+  private static boolean fresh(Object timestamp) {
+    long age = Duration.between(TrainingJobService.instant(timestamp), Instant.now()).getSeconds();
+    return age >= -60 && age <= 90;
   }
 
   public Map<String, Object> completionSummary(long server, String id) {

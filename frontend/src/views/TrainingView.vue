@@ -1,10 +1,23 @@
 <script setup lang="ts">
-import { computed, ref, reactive, watch, onUnmounted, onMounted } from 'vue'
+import {
+  computed,
+  ref,
+  reactive,
+  watch,
+  onUnmounted,
+  onMounted,
+  nextTick,
+} from 'vue'
 import { api, errorMessage } from '../api'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatTime } from '../utils/format'
 import TrendChart from '../components/TrendChart.vue'
 import WorkloadPanel from '../components/WorkloadPanel.vue'
+import {
+  resourceSuggestionPatch,
+  confidenceText,
+  type ResourceSuggestion,
+} from '../utils/resourceSuggestion'
 const store = useWorkspaceStore(),
   server = ref<number>(),
   items = ref<any[]>([]),
@@ -21,9 +34,9 @@ const form = reactive({
   mode: 'SHARED',
   start: '',
   hours: 2,
-  expectedVramMb: 4096,
-  expectedRamMb: 8192,
-  expectedCpuCores: 2,
+  expectedVramMb: undefined as number | undefined,
+  expectedRamMb: undefined as number | undefined,
+  expectedCpuCores: undefined as number | undefined,
   expectedDiskReadMbps: null,
   expectedDiskWriteMbps: null,
   expectedNetworkMbps: null,
@@ -42,6 +55,62 @@ const policy = reactive<any>({
   }),
   identity = reactive({ userId: undefined, linuxUsername: '' })
 const base = () => `/api/servers/${server.value}/training`
+const canPlan = computed(
+  () => ['ADMIN', 'OPERATOR'].includes(store.role) && !store.demo,
+)
+const showPlanner = ref(false),
+  showPresets = ref(false),
+  presetsLoading = ref(false),
+  planNotice = ref('')
+const presets = ref<ResourceSuggestion[]>([]),
+  plannerElement = ref<HTMLElement | null>(null)
+let pageEpoch = 0
+function openPlanner() {
+  showPlanner.value = true
+  if (!form.start)
+    form.start = new Date(
+      Date.now() + 120000 - new Date().getTimezoneOffset() * 60000,
+    )
+      .toISOString()
+      .slice(0, 16)
+  void nextTick(() =>
+    plannerElement.value?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    }),
+  )
+}
+async function openPresets() {
+  if (!server.value || store.demo) return
+  const current = pageEpoch
+  showPresets.value = true
+  presetsLoading.value = true
+  try {
+    const { data } = await api.get<ResourceSuggestion[]>(
+      base() + '/resource-presets',
+    )
+    if (current === pageEpoch) presets.value = data
+  } catch (e) {
+    if (current === pageEpoch) error.value = errorMessage(e)
+  } finally {
+    if (current === pageEpoch) presetsLoading.value = false
+  }
+}
+function applySuggestion(source: ResourceSuggestion) {
+  try {
+    Object.assign(form, resourceSuggestionPatch(source))
+    if (!form.taskName) form.taskName = source.label.slice(0, 160)
+    if (source.taskType) form.taskType = source.taskType
+    planNotice.value = `${source.source === 'CONFIRMED_PROFILE' ? '历史画像' : '单次观测参考'} · ${source.sampleCount} 个样本 · ${source.basis}`
+    if (source.missingEvidence.length)
+      planNotice.value += '；缺少依据的字段已留空'
+    showPresets.value = false
+    openPlanner()
+  } catch (e) {
+    error.value = errorMessage(e)
+  }
+}
+
 async function run(fn: () => Promise<void>) {
   busy.value = true
   error.value = ''
@@ -55,12 +124,21 @@ async function run(fn: () => Promise<void>) {
 }
 async function load() {
   if (!server.value || store.demo) return
-  items.value = (await api.get(base() + '/jobs')).data
-  processes.value = (
-    await api.get(`/api/servers/${server.value}/gpus/processes`)
-  ).data
-  if (detail.value)
-    detail.value = (await api.get(base() + '/jobs/' + detail.value.id)).data
+  const current = pageEpoch,
+    target = server.value
+  const [jobRows, processRows] = await Promise.all([
+    api.get(`/api/servers/${target}/training/jobs`),
+    api.get(`/api/servers/${target}/gpus/processes`),
+  ])
+  if (current !== pageEpoch) return
+  items.value = jobRows.data
+  processes.value = processRows.data
+  if (detail.value) {
+    const { data } = await api.get(
+      `/api/servers/${target}/training/jobs/${detail.value.id}`,
+    )
+    if (current === pageEpoch) detail.value = data
+  }
 }
 watch(
   () => store.servers,
@@ -71,6 +149,12 @@ watch(
   { immediate: true },
 )
 watch(server, () => {
+  pageEpoch++
+  items.value = []
+  processes.value = []
+  presets.value = []
+  showPlanner.value = showPresets.value = false
+  planNotice.value = ''
   detail.value = undefined
   report.value = undefined
   editing.value = undefined
@@ -106,6 +190,7 @@ async function save() {
       })
     ).data
     editing.value = undefined
+    showPlanner.value = false
     await load()
   })
 }
@@ -153,6 +238,7 @@ function edit() {
     hours: (Date.parse(r.expectedEndAt) - Date.parse(r.startsAt)) / 3600000,
   })
   editing.value = detail.value.id
+  openPlanner()
 }
 const policyLabels: Record<string, string> = {
   ramReserveMb: 'RAM 安全预留 / MiB',
@@ -243,114 +329,144 @@ function processTree() {
       style="min-width: 240px"
       :options="store.servers.map((s) => ({ value: s.id, label: s.name }))"
     />
+    <a-button
+      v-if="canPlan"
+      type="primary"
+      :disabled="!server"
+      @click="openPlanner"
+      >规划新任务</a-button
+    >
   </div>
   <a-alert v-if="error" :message="error" type="error" show-icon />
   <a-alert v-if="store.demo" message="训练任务需要登录真实环境" type="info" />
-  <WorkloadPanel :server-id="server" />
-  <a-card
-    v-if="store.role !== 'VIEWER' && !store.demo"
-    :title="editing ? '编辑未启动任务' : '登记训练任务'"
-  >
-    <a-form layout="vertical" @finish="save"
-      ><div class="resource-grid">
-        <a-form-item label="任务名称" required
-          ><a-input v-model:value="form.taskName" :maxlength="160" required
-        /></a-form-item>
-        <a-form-item label="GPU 编号 / 使用模式"
-          ><a-space
-            ><a-input-number v-model:value="form.gpuIndex" :min="0" /><a-select
-              v-model:value="form.mode"
-              :options="
-                ['SHARED', 'EXCLUSIVE'].map((value) => ({ value }))
-              " /></a-space
-        ></a-form-item>
-        <a-form-item label="预约开始时间" required
-          ><input
-            type="datetime-local"
-            class="ant-input"
-            v-model="form.start"
-            required /></a-form-item
-        ><a-form-item label="时长（小时，最多 168）"
-          ><a-input-number v-model:value="form.hours" :min="0.1" :max="168"
-        /></a-form-item>
-        <a-form-item label="显存峰值（MiB）" required
-          ><a-input-number
-            v-model:value="form.expectedVramMb"
-            :min="1" /></a-form-item
-        ><a-form-item label="系统 RAM 峰值（MiB）" required
-          ><a-input-number v-model:value="form.expectedRamMb" :min="1"
-        /></a-form-item>
-        <a-form-item label="CPU 核心"
-          ><a-input-number
-            v-model:value="form.expectedCpuCores"
-            :min="0.1" /></a-form-item
-        ><a-form-item label="数据集"
-          ><a-input v-model:value="form.dataset" :maxlength="1000"
-        /></a-form-item>
-        <a-form-item
-          v-for="[key, label] in [
-            ['expectedDiskReadMbps', '磁盘读 MB/s'],
-            ['expectedDiskWriteMbps', '磁盘写 MB/s'],
-            ['expectedNetworkMbps', '网络 MB/s'],
-          ]"
-          :key="key"
-          :label="label + '（可选）'"
-          ><a-input-number v-model:value="(form as any)[key]" :min="0.1"
-        /></a-form-item>
-        <a-form-item label="任务类型"
-          ><a-input v-model:value="form.taskType" :maxlength="80"
-        /></a-form-item>
-        <a-form-item label="任务描述"
-          ><a-textarea
-            v-model:value="form.description"
-            :maxlength="1000" /></a-form-item
-        ><a-form-item label="训练脚本 / 配置说明（仅登记，请勿填写密钥）"
-          ><a-textarea v-model:value="form.runConfiguration" :maxlength="2000"
-        /></a-form-item>
-      </div>
-      <a-space
-        ><a-checkbox v-model:checked="form.queueIfUnavailable"
-          >资源不足时排队</a-checkbox
-        ><a-button
-          type="primary"
-          html-type="submit"
-          :loading="busy"
-          :disabled="!server"
-          >提交资源检查</a-button
-        ><a-button v-if="editing" @click="editing = undefined"
-          >取消编辑</a-button
-        ></a-space
-      ></a-form
+  <WorkloadPanel
+    :server-id="server"
+    :planning-enabled="canPlan"
+    @plan="applySuggestion"
+    @presets="openPresets"
+  />
+  <div ref="plannerElement">
+    <a-card
+      v-if="canPlan && showPlanner"
+      :title="editing ? '编辑资源计划' : '规划新任务'"
     >
-  </a-card>
-  <a-card title="训练任务" style="margin-top: 18px"
-    ><a-table
-      :data-source="items"
-      row-key="id"
-      :scroll="{ x: 850 }"
-      :columns="[
-        { title: '任务', dataIndex: 'task_name' },
-        { title: '用户 ID', dataIndex: 'user_id' },
-        { title: 'GPU', dataIndex: 'gpu_index' },
-        { title: '模式', dataIndex: 'mode' },
-        { title: '状态', dataIndex: 'state' },
-        { title: '开始', dataIndex: 'starts_at' },
-        { title: '详情', key: 'view' },
-      ]"
-      ><template #bodyCell="{ column, record }"
-        ><a-button
-          v-if="column.key === 'view'"
-          type="link"
-          @click="select(record)"
-          >查看</a-button
-        ><template v-else-if="column.dataIndex === 'starts_at'">{{
-          formatTime(record.starts_at)
-        }}</template
-        ><a-tag v-else-if="column.dataIndex === 'state'">{{
-          record.state
-        }}</a-tag></template
-      ></a-table
-    ></a-card
+      <template #extra
+        ><a-space
+          ><a-button @click="openPresets">按历史画像填充</a-button
+          ><a-button @click="showPlanner = false">收起</a-button></a-space
+        ></template
+      >
+      <a-alert v-if="planNotice" :message="planNotice" type="info" show-icon />
+      <a-form layout="vertical" @finish="save"
+        ><div class="resource-grid">
+          <a-form-item label="任务名称" required
+            ><a-input v-model:value="form.taskName" :maxlength="160" required
+          /></a-form-item>
+          <a-form-item label="GPU 编号 / 使用模式"
+            ><a-space
+              ><a-input-number
+                v-model:value="form.gpuIndex"
+                :min="0" /><a-select
+                v-model:value="form.mode"
+                :options="
+                  ['SHARED', 'EXCLUSIVE'].map((value) => ({ value }))
+                " /></a-space
+          ></a-form-item>
+          <a-form-item label="预约开始时间" required
+            ><input
+              type="datetime-local"
+              class="ant-input"
+              v-model="form.start"
+              required /></a-form-item
+          ><a-form-item label="时长（小时，最多 168）"
+            ><a-input-number v-model:value="form.hours" :min="0.1" :max="168"
+          /></a-form-item>
+          <a-form-item label="显存峰值（MiB）" required
+            ><a-input-number
+              placeholder="选择历史记录或填写"
+              v-model:value="form.expectedVramMb"
+              :min="1" /></a-form-item
+          ><a-form-item label="系统 RAM 峰值（MiB）" required
+            ><a-input-number v-model:value="form.expectedRamMb" :min="1"
+          /></a-form-item>
+          <a-form-item label="CPU 核心"
+            ><a-input-number
+              v-model:value="form.expectedCpuCores"
+              :min="0.1" /></a-form-item
+          ><a-form-item label="数据集"
+            ><a-input v-model:value="form.dataset" :maxlength="1000"
+          /></a-form-item>
+          <a-form-item
+            v-for="[key, label] in [
+              ['expectedDiskReadMbps', '磁盘读 MB/s'],
+              ['expectedDiskWriteMbps', '磁盘写 MB/s'],
+              ['expectedNetworkMbps', '网络 MB/s'],
+            ]"
+            :key="key"
+            :label="label + '（可选）'"
+            ><a-input-number v-model:value="(form as any)[key]" :min="0.1"
+          /></a-form-item>
+          <a-form-item label="任务类型"
+            ><a-input v-model:value="form.taskType" :maxlength="80"
+          /></a-form-item>
+          <a-form-item label="任务描述"
+            ><a-textarea
+              v-model:value="form.description"
+              :maxlength="1000" /></a-form-item
+          ><a-form-item label="训练脚本 / 配置说明（仅登记，请勿填写密钥）"
+            ><a-textarea
+              v-model:value="form.runConfiguration"
+              :maxlength="2000"
+          /></a-form-item>
+        </div>
+        <a-space
+          ><a-checkbox v-model:checked="form.queueIfUnavailable"
+            >资源不足时排队</a-checkbox
+          ><a-button
+            type="primary"
+            html-type="submit"
+            :loading="busy"
+            :disabled="!server"
+            >提交资源检查</a-button
+          ><a-button v-if="editing" @click="editing = undefined"
+            >取消编辑</a-button
+          ></a-space
+        ></a-form
+      >
+    </a-card>
+  </div>
+  <a-collapse style="margin-top: 18px"
+    ><a-collapse-panel key="plans" header="资源计划"
+      ><a-card title="已登记的资源计划" style="margin-top: 18px"
+        ><a-table
+          :data-source="items"
+          row-key="id"
+          :scroll="{ x: 850 }"
+          :columns="[
+            { title: '任务', dataIndex: 'task_name' },
+            { title: '用户 ID', dataIndex: 'user_id' },
+            { title: 'GPU', dataIndex: 'gpu_index' },
+            { title: '模式', dataIndex: 'mode' },
+            { title: '状态', dataIndex: 'state' },
+            { title: '开始', dataIndex: 'starts_at' },
+            { title: '详情', key: 'view' },
+          ]"
+          ><template #bodyCell="{ column, record }"
+            ><a-button
+              v-if="column.key === 'view' && record.privateDetails !== false"
+              type="link"
+              @click="select(record)"
+              >查看</a-button
+            ><template v-else-if="column.dataIndex === 'starts_at'">{{
+              formatTime(record.starts_at)
+            }}</template
+            ><a-tag v-else-if="column.dataIndex === 'state'">{{
+              record.state
+            }}</a-tag></template
+          ></a-table
+        ></a-card
+      >
+    </a-collapse-panel></a-collapse
   >
   <a-card
     v-if="detail"
@@ -559,4 +675,61 @@ function processTree() {
       ></a-collapse-panel
     ></a-collapse
   >
+  <a-modal
+    v-model:open="showPresets"
+    title="选择历史资源"
+    :footer="null"
+    width="820px"
+  >
+    <a-alert
+      v-if="!presetsLoading && !presets.length"
+      type="info"
+      message="暂无可复用的个人运行记录。已运行任务仍可直接分析；管理员绑定 Linux 身份后可积累个人画像。"
+    />
+    <a-table
+      :data-source="presets"
+      :loading="presetsLoading"
+      row-key="id"
+      :pagination="{ pageSize: 6 }"
+      :scroll="{ x: 700 }"
+      :columns="[
+        { title: '来源', key: 'source' },
+        { title: '显存 / MiB', key: 'vram' },
+        { title: 'RAM / MiB', key: 'ram' },
+        { title: '运行 / 采样', key: 'count' },
+        { title: '', key: 'apply' },
+      ]"
+    >
+      <template #bodyCell="{ column, record }"
+        ><template v-if="column.key === 'source'"
+          ><strong>{{ record.label }}</strong>
+          <div>
+            {{
+              record.source === 'CONFIRMED_PROFILE'
+                ? '已确认画像'
+                : '单次运行参考'
+            }}
+            · {{ confidenceText(record.confidence) }}
+          </div></template
+        ><template v-else-if="column.key === 'vram'">{{
+          record.suggested.expectedVramMb ?? '未知'
+        }}</template
+        ><template v-else-if="column.key === 'ram'">{{
+          record.suggested.expectedRamMb ?? '未知'
+        }}</template
+        ><template v-else-if="column.key === 'count'"
+          >{{ record.runCount }} / {{ record.sampleCount }}</template
+        ><template v-else-if="column.key === 'apply'"
+          ><a-button
+            type="primary"
+            :disabled="record.multipleGpus"
+            @click="applySuggestion(record)"
+            >{{
+              record.multipleGpus ? '多卡记录，仅供参考' : '使用此资源'
+            }}</a-button
+          ></template
+        ></template
+      >
+    </a-table>
+  </a-modal>
 </template>

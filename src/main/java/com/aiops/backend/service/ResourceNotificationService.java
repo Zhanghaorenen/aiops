@@ -12,6 +12,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class ResourceNotificationService {
+  @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.redis.NotificationEvents events;
   private final JdbcTemplate jdbc;
   private final ClusterPermissionService access;
   private final TrainingJobService jobs;
@@ -83,12 +84,14 @@ public class ResourceNotificationService {
         access.currentUser().getId());
   }
 
+  @Transactional
   public void read(String id) {
     if (jdbc.update(
             "UPDATE ops_user_notification SET is_read=TRUE WHERE id=? AND user_id=?",
             id,
             access.currentUser().getId())
         != 1) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+    events.userAfterCommit(access.currentUser().getId());
   }
 
   @Transactional
@@ -154,5 +157,6 @@ public class ResourceNotificationService {
         json.writeValueAsString(content),
         dedup,
         TrainingJobService.utc(now));
+    events.userAfterCommit(access.currentUser().getId());
   }
 }

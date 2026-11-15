@@ -25,7 +25,7 @@ test('training task creation is hidden for viewers and available for operators',
     const container={props:['title'],setup:(props,{slots})=>()=>h('section',[props.title,slots.default?.()])}
     for(const name of ['a-space','a-card','a-select','a-alert','a-table','a-collapse','a-collapse-panel','a-form','a-form-item','a-input','a-input-number','a-textarea','a-button','a-checkbox'])app.component(name,container)
     const html=await renderToString(app)
-    assert.equal(html.includes('登记训练任务'),role==='OPERATOR')
+    assert.equal(html.includes('规划新任务'),role==='OPERATOR')
   }
 })
 
@@ -593,4 +593,23 @@ test('structured prediction cards stay scoped to the current chat and reset on l
   instance.reset()
   assert.deepEqual(instance.messages.value,[])
   assert.deepEqual(instance.resourceResults.value,[])
+})
+
+
+test('resource autofill copies measured fields and leaves unknown resources empty', async () => {
+  const {resourceSuggestionPatch}=await vite.ssrLoadModule('/src/utils/resourceSuggestion.ts')
+  const source={multipleGpus:false,suggested:{expectedVramMb:3584,expectedRamMb:undefined,expectedCpuCores:1.5,gpuIndex:2,expectedDiskReadMbps:Number.NaN,environment:'PRIVATE'}}
+  const patch=resourceSuggestionPatch(source)
+  assert.equal(patch.expectedVramMb,3584);assert.equal(patch.gpuIndex,2)
+  assert.equal(patch.expectedRamMb,undefined);assert.equal(patch.expectedDiskReadMbps,undefined)
+  assert.ok(!('environment' in patch))
+  assert.throws(()=>resourceSuggestionPatch({...source,multipleGpus:true}),/多张 GPU/)
+})
+
+test('AI task analysis handoff contains resource identity without private process paths', async () => {
+  const {workloadQuestion}=await vite.ssrLoadModule('/src/utils/resourceSuggestion.ts')
+  const question=workloadQuestion(2,{runId:'test-run',workingDirectory:'/private/data',command:'secret'})
+  assert.match(question,/服务器 2/);assert.match(question,/test-run/)
+  assert.doesNotMatch(question,/private|secret/)
+  assert.match(workloadQuestion(2,{pid:123,snapshotId:4}),/快照 ID 4/)
 })

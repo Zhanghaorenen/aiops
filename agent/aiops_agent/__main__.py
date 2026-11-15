@@ -194,6 +194,18 @@ class Agent:
     def run(self) -> None:
         if not self.credential:
             self.enroll()
+        if os.getenv('AIOPS_RESOURCE_GUARD', '0') == '1':
+            try:
+                from .resource_guard import ResourceGuard
+                uids={int(x) for x in os.getenv('AIOPS_GUARD_BUSINESS_UIDS','').split(',') if x.strip()}
+                if any(uid<1000 for uid in uids):raise ValueError('Business UIDs must be >=1000')
+                protected={int(x) for x in os.getenv('AIOPS_GUARD_PROTECTED_PIDS','').split(',') if x.strip()}
+                guard=ResourceGuard(self.client,self.credential,
+                    self.config.state_file.parent/'resource-guard',self._stop_event,
+                    armed=os.getenv('AIOPS_GUARD_ARMED','0')=='1',business_uids=uids,protected_pids=protected)
+                threading.Thread(target=guard.run,name='resource-guard',daemon=True).start()
+            except (ValueError,OSError,psutil.Error) as error:
+                print(f'Resource protection unavailable ({type(error).__name__}); monitoring continues',file=sys.stderr)
         print(f"Monitoring {self.hostname} every {self.config.interval_seconds}s")
         next_sample = time.monotonic()
         while not self._stop_event.is_set():

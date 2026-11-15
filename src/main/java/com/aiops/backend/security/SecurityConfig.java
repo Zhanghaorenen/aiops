@@ -32,7 +32,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
                         .requestMatchers("/api/agent/enroll").permitAll()
                         .requestMatchers("/api/internal/knowledge/**").permitAll()
-                        .requestMatchers("/api/agent/heartbeat", "/api/agent/metrics").hasRole("AGENT")
+                        .requestMatchers("/api/agent/heartbeat", "/api/agent/metrics", "/api/agent/resource-guard/sync").hasRole("AGENT")
                         .anyRequest().hasRole("USER"))
                 .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, exception) ->
                         response.sendError(HttpStatus.UNAUTHORIZED.value())))

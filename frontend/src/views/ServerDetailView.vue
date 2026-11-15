@@ -10,6 +10,7 @@ import { formatBytes, formatPercent, formatTime } from '../utils/format'
 import HostResourcePanel from '../components/HostResourcePanel.vue'
 import GpuMonitor from '../components/GpuMonitor.vue'
 import GpuUsage from '../components/GpuUsage.vue'
+import ResourceGuardPanel from '../components/ResourceGuardPanel.vue'
 
 const store = useWorkspaceStore()
 const route = useRoute()
@@ -174,6 +175,7 @@ function exportCsv() {
       class="error-banner"
       :message="`服务器已离线，以下为历史采样。最后心跳：${formatTime(server.lastSeenAt)}`"
     />
+    <ResourceGuardPanel :server-id="server.id" />
     <div v-if="tab !== 'host'" class="metric-strip">
       <div v-for="(key, index) in metricKeys" :key="key">
         <span class="muted">{{

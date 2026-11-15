@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import math
 from typing import TYPE_CHECKING
 import httpx
+from .numeric_evidence import gpu_evidence, capacity
 
 if TYPE_CHECKING:
     from ..client.platform_client import PlatformClient
@@ -104,7 +105,7 @@ class GPUManager:
             ):
                 raise ValueError("GPU 已用或空闲显存不能大于总显存")
             gpu["memeory_utilization"] = gpu["memory_utilization"]  # 兼容原拼写
-            result.append(gpu)
+            result.append(gpu_evidence(gpu))
         return info, result
 
     async def get_gpu_status(self, server_id: int, gpu_id: int) -> dict:
@@ -138,6 +139,7 @@ class GPUManager:
             "memory_usage_percent": round(used / total * 100, 2)
             if total and used is not None
             else None,
+            'capacity_display': {'total':capacity(total),'used':capacity(used)},
             "gpus": gpus,
         }
 
@@ -187,8 +189,8 @@ class GPUManager:
         """委托平台历史接口，保留原始采样指标并按时间升序返回。"""
         self._validate_ids(server_id, gpu_id)
         start, end = self._time(start_time), self._time(end_time)
-        if start > end:
-            raise ValueError("开始时间不能晚于结束时间")
+        if start > end or end > (self.client.server_now() if callable(getattr(self.client, 'server_now', None)) else datetime.now(timezone.utc)):
+            raise ValueError("invalid_time_range: UTC end must not exceed service time; use get_recent_gpu_history for relative queries")
         history = await self._call(
             "get_gpu_history", server_id, gpu_id, start_time, end_time
         )
@@ -251,6 +253,7 @@ class GPUManager:
             "gpu_uuid": gpu["gpu_uuid"],
             "status": "stale" if gpu.get("freshness") != "FRESH" else status,
             "analysis_type": "snapshot_rules",
+            'evidence_limits': 'Only temperature and capacity thresholds; no evidence about throttling, memory eviction, long-term health or vendor specifications.',
             "alerts": alerts,
             "missing_metrics": missing,
             "memory_usage_percent": memory,
