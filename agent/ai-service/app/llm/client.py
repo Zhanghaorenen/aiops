@@ -33,8 +33,14 @@ class LLMClient:
             http_client=http_client,
         )
 
-    async def chat(self, messages: list[dict], tools=None):
+    async def chat(self, messages: list[dict], tools=None, *, json_mode=False, idempotency_key=None, max_tokens=None):
         kwargs = {"model": self.model, "messages": messages, **self.request_options}
+        if json_mode:
+            kwargs['response_format'] = {'type': 'json_object'}
+        if idempotency_key:
+            kwargs['extra_headers'] = {'Idempotency-Key': idempotency_key}
+        if max_tokens:
+            kwargs['max_tokens'] = max_tokens
         if tools:
             kwargs.update(tools=tools, tool_choice="auto")
         completion = await self.client.chat.completions.create(**kwargs)

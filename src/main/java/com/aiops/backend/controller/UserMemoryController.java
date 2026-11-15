@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api")
 public class UserMemoryController {
+  @org.springframework.beans.factory.annotation.Autowired private com.aiops.backend.service.LongTermMemoryService longTerm;
   private final UserMemoryService service;
 
   public UserMemoryController(UserMemoryService service) {
@@ -17,7 +18,7 @@ public class UserMemoryController {
 
   public record Setting(boolean automatic) {}
 
-  public record Memory(@NotBlank @Size(max = 4000) String content) {}
+  public record Memory(@NotBlank @Size(max = 4000) String content,@Pattern(regexp="USER_PREFERENCE|WORKFLOW|ENVIRONMENT|CONFIRMED_EXPERIENCE") String category) {}
 
   public record Candidate(
       @Positive Long incidentId,
@@ -48,7 +49,7 @@ public class UserMemoryController {
 
   @PostMapping("/ai/memories")
   public void remember(@Valid @RequestBody Memory m) {
-    service.remember(m.content());
+    longTerm.manual(null,m.category()==null?"USER_PREFERENCE":m.category(),m.content());
   }
 
   @DeleteMapping("/ai/memories/{id}")

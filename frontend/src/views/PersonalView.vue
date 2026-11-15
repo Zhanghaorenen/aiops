@@ -4,15 +4,14 @@ import { api, aiApi, errorMessage } from '../api'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatTime } from '../utils/format'
 import { useNotificationEvents } from '../composables/useNotificationEvents'
+import LongTermMemoryPanel from '../components/LongTermMemoryPanel.vue'
 
 const store = useWorkspaceStore()
-const memories = ref<any[]>([]),
-  subscriptions = ref<any[]>([]),
+const subscriptions = ref<any[]>([]),
   notifications = ref<any[]>([]),
   cases = ref<any[]>([]),
   searchResults = ref<any[]>([])
 const automatic = ref(false),
-  content = ref(''),
   error = ref(''),
   server = ref<number>(),
   query = ref('')
@@ -47,14 +46,12 @@ async function action(fn: () => Promise<void>) {
 async function load() {
   if (!store.token || store.demo) return
   const v = revision
-  const [m, s, n, p] = await Promise.all([
-    api.get('/api/ai/memories'),
+  const [s, n, p] = await Promise.all([
     api.get('/api/resources/subscriptions'),
     api.get('/api/resources/notifications'),
     api.get('/api/ai/memory/settings'),
   ])
   if (v !== revision) return
-  memories.value = m.data
   subscriptions.value = s.data
   notifications.value = n.data
   automatic.value = p.data.automatic
@@ -62,11 +59,6 @@ async function load() {
     const c = await api.get(caseBase())
     if (v === revision) cases.value = c.data
   }
-}
-async function saveMemory() {
-  await api.post('/api/ai/memories', { content: content.value })
-  content.value = ''
-  await load()
 }
 async function subscribe() {
   await api.post('/api/resources/subscriptions', {
@@ -104,12 +96,6 @@ function changeAutomatic(enabled: boolean | number | string) {
     const v = revision
     await api.put('/api/ai/memory/settings', { automatic: !!enabled })
     if (v === revision) automatic.value = !!enabled
-  })
-}
-function deleteMemory(id: string) {
-  void action(async () => {
-    await api.delete('/api/ai/memories/' + id)
-    await load()
   })
 }
 function cancelSubscription(id: string) {
@@ -152,12 +138,10 @@ watch(
   [() => store.token, () => store.demo, server],
   () => {
     revision++
-    memories.value = []
     subscriptions.value = []
     notifications.value = []
     cases.value = []
     searchResults.value = []
-    content.value = ''
     query.value = ''
     automatic.value = false
     error.value = ''
@@ -194,29 +178,7 @@ useNotificationEvents(load)
             :disabled="store.demo"
             @change="changeAutomatic"
         /></a-space>
-        <a-form layout="vertical" @finish="action(saveMemory)"
-          ><a-form-item label="保存经过确认的偏好或经验"
-            ><a-textarea
-              v-model:value="content"
-              :maxlength="4000" /></a-form-item
-          ><a-button
-            html-type="submit"
-            :disabled="!content.trim() || store.demo"
-            >保存</a-button
-          ></a-form
-        >
-        <a-list :data-source="memories"
-          ><template #renderItem="{ item }"
-            ><a-list-item
-              ><span>{{ item.content }}</span
-              ><a-popconfirm
-                title="删除这条私人记忆？"
-                @confirm="deleteMemory(item.id)"
-                ><a-button danger size="small">删除</a-button></a-popconfirm
-              ></a-list-item
-            ></template
-          ></a-list
-        >
+        <LongTermMemoryPanel />
       </a-card>
     </a-tab-pane>
     <a-tab-pane key="reminders" tab="资源提醒">

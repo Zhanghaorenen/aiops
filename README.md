@@ -105,3 +105,7 @@ npm run typecheck && npm test && npm run build
 ## Redis 接入
 
 监控短缓存、Agent 用户限流、告警/资源通知实时刷新配置和验证见 [docs/redis.md](docs/redis.md)。
+
+## 私人长期记忆
+
+个人记录支持独立授权的自动聊天摘要、结构化记忆、跨会话语义召回及编辑/删除；默认关闭自动提取，详见 [docs/user-memory.md](docs/user-memory.md)。

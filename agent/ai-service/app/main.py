@@ -34,6 +34,8 @@ def create_app(settings: Settings | None = None, platform_factory=PlatformClient
     application.add_middleware(CORSMiddleware, allow_origins=[origin], allow_methods=["GET", "POST", "DELETE"],
                                allow_headers=["Authorization", "Content-Type"], expose_headers=["Retry-After"])
     application.include_router(chat_router)
+    from .api.chat_memory import router as chat_memory_router
+    application.include_router(chat_memory_router)
     from .api.knowledge import router as knowledge_router
     application.include_router(knowledge_router)
     from .api.investigation import router as investigation_router

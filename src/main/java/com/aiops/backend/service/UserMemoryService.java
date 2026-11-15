@@ -13,6 +13,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class UserMemoryService {
+  @org.springframework.beans.factory.annotation.Autowired private LongTermMemoryService longTerm;
   private final JdbcTemplate jdbc;
   private final ClusterPermissionService access;
   private final ObjectMapper json = new ObjectMapper();
@@ -42,30 +43,21 @@ public class UserMemoryService {
   @Transactional
   public void automatic(boolean enabled) {
     long u = user();
-    jdbc.update("DELETE FROM ai_user_memory_setting WHERE user_id=?", u);
-    jdbc.update("INSERT INTO ai_user_memory_setting(user_id,automatic) VALUES(?,?)", u, enabled);
+    jdbc.queryForMap("SELECT id FROM sys_user WHERE id=? FOR UPDATE",u);
+    if(jdbc.update("UPDATE ai_user_memory_setting SET automatic=? WHERE user_id=?",enabled,u)==0)
+      jdbc.update("INSERT INTO ai_user_memory_setting(user_id,automatic) VALUES(?,?)",u,enabled);
   }
 
   public Object memories() {
-    return jdbc.queryForList(
-        "SELECT id,content,source,created_at FROM ai_user_memory WHERE user_id=? ORDER BY"
-            + " created_at DESC LIMIT 200",
-        user());
+    return longTerm.memories();
   }
 
   public void remember(String content) {
-    jdbc.update(
-        "INSERT INTO ai_user_memory(id,user_id,content,source,created_at)"
-            + " VALUES(?,?,?,'USER_CONFIRMED',?)",
-        UUID.randomUUID().toString(),
-        user(),
-        content,
-        now());
+    longTerm.manual(null,"USER_PREFERENCE",content);
   }
 
   public void forget(String id) {
-    if (jdbc.update("DELETE FROM ai_user_memory WHERE id=? AND user_id=?", id, user()) != 1)
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+    longTerm.delete(id);
   }
 
   public List<Map<String, Object>> cases(long server, boolean verified) {

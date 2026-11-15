@@ -22,6 +22,7 @@ from ..tools.server_manager import ServerManager
 from ..tools.server_tool import ServerTool
 from ..tools.gpu_manager import GPUManager
 from ..tools.gpu_tool import GpuTool
+from ..memory.recall import UserMemoryRecall
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["AI 对话"])
@@ -85,6 +86,7 @@ async def chat(payload: ChatRequest, request: Request,
                 ServerTool(ServerManager(platform), IncidentMemorySearch(platform, settings, request.app.state.rag_resources).search),
                 GpuTool(GPUManager(platform)),
                 settings.max_rounds, rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
+                memory_recall=UserMemoryRecall(platform,settings,request.app.state.rag_resources,verified_user=user),
             )
             async with session_turn(platform, payload) as turn:
                 if turn.replay is not None:
@@ -142,7 +144,7 @@ async def chat_stream(payload: ChatRequest, request: Request,
             )
             stack.push_async_callback(platform.close)
             try:
-                await platform.get_current_user()
+                stream_user=await platform.get_current_user()
                 llm = request.app.state.llm_factory(
                     settings.llm_model, settings.llm_base_url,
                     settings.llm_api_key, settings.llm_timeout,
@@ -152,6 +154,7 @@ async def chat_stream(payload: ChatRequest, request: Request,
                 agent = GraphAgent(
                     llm, ServerTool(ServerManager(platform), IncidentMemorySearch(platform, settings, request.app.state.rag_resources).search),
                     GpuTool(GPUManager(platform)), settings.max_rounds, rag_tools=rag_tool(platform,settings,request.app.state.rag_resources),
+                    memory_recall=UserMemoryRecall(platform,settings,request.app.state.rag_resources,verified_user=stream_user),
                 )
                 import anyio
                 async with session_turn(platform, payload) as turn:

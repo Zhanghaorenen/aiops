@@ -58,6 +58,19 @@ class PlatformClient:
     async def get_current_user(self) -> dict:
         return await self._get("/api/auth/me", dict)
 
+    async def get_memory_task(self, task_id, lease, service_key):
+        response=await self.client.get(f'api/ai/chat-memory/tasks/{task_id}',headers={'X-Memory-Lease':lease,'X-AI-Service-Key':service_key})
+        response.raise_for_status()
+        return response.json()
+
+    async def get_user_memory(self, memory_id):
+        return await self._get(f'/api/ai/memories/{memory_id}',dict)
+
+    async def verify_user_memories(self, references):
+        response=await self.client.post('api/ai/memories/verify',json={'references':references})
+        response.raise_for_status()
+        return response.json()
+
     async def begin_chat_turn(self, session_id, request_id, question):
         response = await self.client.post(f"api/ai/sessions/{session_id}/turns", json={"requestId": str(request_id), "question": question})
         response.raise_for_status()

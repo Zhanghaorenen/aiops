@@ -4,6 +4,7 @@
 |---|---|
 | [快速开始](quickstart.md) | 环境、服务启动、管理员和 Agent 接入 |
 | [Redis](redis.md) | 监控缓存、用户限流、实时通知及验证命令 |
+| [用户长期记忆](user-memory.md) | 授权、自动摘要、私人语义召回和管理 |
 | [架构](architecture.md) | 服务边界、数据流与资源准入 |
 | [训练任务](training.md) | 创建任务、进程关联、SDK 与接口 |
 | [内存资源保护](resource-guard.md) | 业务进程自动处置、保护规则、启用和审计 |

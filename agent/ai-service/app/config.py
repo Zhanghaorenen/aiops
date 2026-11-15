@@ -43,12 +43,18 @@ class Settings:
     redis_timeout: float = 0.5
     redis_key_prefix: str = "aiops:"
     chat_rate_per_minute: int = 20
+    memory_top_k: int = 4
+    memory_score_threshold: float = .72
+    memory_context_chars: int = 2000
+    memory_recall_timeout: float = 2.0
 
     embedding_device: str = 'cpu'
     embedding_batch_size: int = 16
     rag_vector_schema_version: str = '2'
 
     def __post_init__(self):
+        if not 1 <= self.memory_top_k <= 5 or not 0 <= self.memory_score_threshold <= 1 or not 200 <= self.memory_context_chars <= 4000 or not .1 <= self.memory_recall_timeout <= 5:
+            raise ValueError('INVALID_MEMORY_RECALL_CONFIGURATION')
         if not self.redis_key_prefix.strip() or not 1 <= self.redis_port <= 65535 or not 0 <= self.redis_db <= 15:
             raise ValueError('INVALID_REDIS_CONFIGURATION')
         if not 0 < self.redis_timeout <= 2 or not 1 <= self.chat_rate_per_minute <= 10000:
@@ -70,6 +76,10 @@ class Settings:
         if redis_enabled not in {'true', 'false'}:
             raise ValueError('AIOPS_REDIS_ENABLED must be true or false')
         return cls(
+            memory_top_k=int(os.getenv('AIOPS_MEMORY_TOP_K','4')),
+            memory_score_threshold=float(os.getenv('AIOPS_MEMORY_SCORE_THRESHOLD','0.72')),
+            memory_context_chars=int(os.getenv('AIOPS_MEMORY_CONTEXT_CHARS','2000')),
+            memory_recall_timeout=float(os.getenv('AIOPS_MEMORY_RECALL_TIMEOUT','2')),
             redis_enabled=redis_enabled == 'true',
             redis_host=os.getenv('AIOPS_REDIS_HOST', '127.0.0.1'),
             redis_port=int(os.getenv('AIOPS_REDIS_PORT', '6379')),
