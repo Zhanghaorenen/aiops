@@ -9,8 +9,29 @@ class ProcessCollector:
         self._processes = {}
         self._io = {}
         self._exits = []
+        self._sample_cache = None
+
+    def begin_sample(self):
+        self._sample_cache = {}
+
+    def end_sample(self):
+        self._sample_cache = None
 
     def get_process_info(self, pid, include_tree=True):
+        if self._sample_cache is not None and pid in self._sample_cache:
+            output = self._sample_cache[pid]
+            if output is None:
+                return None
+            try:
+                live = psutil.Process(pid)
+                if datetime.fromtimestamp(live.create_time(), timezone.utc).isoformat() != output.get('startedAt'):
+                    self._sample_cache[pid] = None
+                    return None
+            except (psutil.Error, OSError):
+                return None
+            if include_tree and 'processTreeStatus' not in output:
+                self._tree(live, output)
+            return dict(output)
         try:
             current = psutil.Process(pid)
             identity = (pid, current.create_time())
@@ -20,6 +41,8 @@ class ProcessCollector:
             if len(self._processes) > 2048:
                 self._processes = {identity: process}
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            if self._sample_cache is not None:
+                self._sample_cache[pid] = None
             return None
         output = {"pid": pid}
 
@@ -53,20 +76,29 @@ class ProcessCollector:
             if len(self._io)>2048: self._io = {identity:self._io[identity]}
         except (psutil.Error, OSError):
             pass
+        if self._sample_cache is not None:
+            self._sample_cache[pid] = output
         if include_tree:
-            try:
-                children = process.children(recursive=True)
-                tree = []
-                for child in children[:128]:
-                    info = self.get_process_info(child.pid, include_tree=False)
-                    if info:
-                        # 子进程只上报资源和身份，路径不进入归组数据。
-                        tree.append({key: value for key, value in info.items() if key not in {'executablePath', 'workingDirectory'}})
-                output['processTree'] = tree
-                output['processTreeTruncated'] = len(children) > 128
-            except (psutil.Error, OSError):
-                pass
+            self._tree(process, output)
         return output
+
+    def _tree(self, process, output):
+        try:
+            children = process.children(recursive=True)
+            tree = []
+            incomplete = len(children) > 128
+            for child in children[:128]:
+                info = self.get_process_info(child.pid, include_tree=False)
+                if info:
+                    tree.append({key: value for key, value in info.items()
+                                 if key not in {'executablePath', 'workingDirectory', 'processTree', 'processTreeStatus', 'processTreeTruncated'}})
+                else:
+                    incomplete = True
+            output['processTree'] = tree
+            output['processTreeTruncated'] = incomplete
+            output['processTreeStatus'] = 'PARTIAL' if incomplete else 'AVAILABLE'
+        except (psutil.Error, OSError):
+            output['processTreeStatus'] = 'UNAVAILABLE'
 
     def collect_exits(self):
         # 只报告本采集器实际见过的身份；GPU 暂不活跃不等于进程退出。

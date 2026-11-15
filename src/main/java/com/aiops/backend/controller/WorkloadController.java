@@ -9,6 +9,10 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/servers/{serverId}/training")
 public class WorkloadController {
+  @org.springframework.beans.factory.annotation.Autowired private RuntimeContentionService contention;
+
+  @GetMapping("/runtime-contention")
+  public Object runtimeContention(@PathVariable long serverId) { return contention.analyze(serverId); }
   private final WorkloadService workloads;
   private final TrainingJobService jobs;
 

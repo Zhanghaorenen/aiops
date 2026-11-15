@@ -88,50 +88,14 @@ public class WorkloadService {
                 + " p JOIN metric_gpu_sample g ON g.snapshot_id=p.snapshot_id AND"
                 + " g.gpu_index=p.gpu_index WHERE p.snapshot_id=?",
             snapshotId);
-    var identities = new HashMap<String, Map<String, Object>>();
-    for (var p : all) {
-      var d = MetricDetails.decode((String) p.get("details_json"));
-      boolean validTime = false;
-      try {
-        validTime =
-            d.get("startedAt") instanceof String t && !Instant.parse(t).isAfter(at.plusSeconds(60));
-      } catch (java.time.format.DateTimeParseException ignored) {
-        /* 不完整的进程身份不建档。 */
-      }
-      if (validTime) {
-        p.put("details", d);
-        identities.put(p.get("pid").toString(), p);
-      }
-    }
-    var groups = new LinkedHashMap<String, List<Map<String, Object>>>();
-    for (var p : all) {
-      if (!(p.get("details") instanceof Map<?, ?> d)) continue;
-      var root = p;
-      var seen = new HashSet<Object>();
-      // 只合并同一 UID、同一快照中确实出现的 GPU 父子进程；缺少证据保持独立候选。
-      while (seen.add(root.get("pid"))) {
-        var rd = (Map<?, ?>) root.get("details");
-        var parent = identities.get(String.valueOf(rd.get("parentPid")));
-        if (!(d.get("linuxUid") instanceof Number)
-            || parent == null
-            || !Objects.equals(
-                ((Map<?, ?>) parent.get("details")).get("linuxUid"), d.get("linuxUid"))) break;
-        if (Instant.parse(((Map<?, ?>) parent.get("details")).get("startedAt").toString())
-            .isAfter(Instant.parse(d.get("startedAt").toString()))) break;
-        root = parent;
-      }
-      var rd = (Map<?, ?>) root.get("details");
-      String key = root.get("pid") + "|" + rd.get("startedAt");
-      groups.computeIfAbsent(key, k -> new ArrayList<>()).add(p);
-    }
     var active = new HashSet<String>();
-    for (var entry : groups.entrySet()) {
-      var processes = entry.getValue();
-      var first = processes.get(0);
+    for (var group : ProcessGroups.collect(all, at)) {
+      if (!group.stable()) continue;
+      var processes = group.gpuProcesses();
+      var first = group.root();
       var d = (Map<?, ?>) first.get("details");
-      String[] parts = entry.getKey().split("\\|", 2);
-      long pid = Long.parseLong(parts[0]);
-      String started = parts[1];
+      long pid = ((Number) first.get("pid")).longValue();
+      String started = d.get("startedAt").toString();
       var mapping =
           jdbc.queryForList(
               "SELECT i.user_id FROM ops_training_linux_identity i JOIN sys_user u ON"
@@ -159,6 +123,8 @@ public class WorkloadService {
               server,
               pid,
               started);
+      if (!rows.isEmpty() && !Objects.equals(ProcessGroups.integer(rows.get(0).get("linux_uid")),ProcessGroups.integer(d.get("linuxUid"))))
+        continue; // Legacy unique key lacks UID: never append another identity's samples to that run.
       String id = rows.isEmpty() ? UUID.randomUUID().toString() : rows.get(0).get("id").toString();
       active.add(id);
       // 运行归属一旦确定就不随管理员后续改映射而转给另一用户。
@@ -214,7 +180,8 @@ public class WorkloadService {
                     .toString()),
             processes);
       }
-      var metrics = measure(processes, server, at);
+      var metrics = new LinkedHashMap<>(group.metrics());
+      attachHostPressure(metrics, server, at);
       boolean newSample =
           jdbc.queryForObject(
                   "SELECT COUNT(*) FROM ops_workload_sample WHERE run_id=? AND snapshot_id=?",
@@ -304,82 +271,15 @@ public class WorkloadService {
     }
   }
 
-  private Map<String, Object> measure(List<Map<String, Object>> ps, long server, Instant at) {
-    var m = new LinkedHashMap<String, Object>();
-    var perGpu = new TreeMap<String, Double>();
-    var cards = new TreeMap<String, Object>();
-    double cpu = 0, rss = 0, uss = 0, read = 0, write = 0;
-    boolean cpuKnown = true, rssKnown = true, ussKnown = true, ioKnown = true, gpuKnown = true;
-    var memberByPid = new LinkedHashMap<Object, Map<?, ?>>();
-    for (var p : ps) {
-      var d = (Map<?, ?>) p.get("details");
-      String uuid = p.get("gpu_uuid").toString();
-      gpuKnown &= p.get("gpu_memory_usage_bytes") instanceof Number;
-      if (p.get("gpu_memory_usage_bytes") instanceof Number)
-        perGpu.merge(uuid, n(p.get("gpu_memory_usage_bytes")), Double::sum);
-      cards.put(uuid, p.get("utilization_percent"));
-      // 先保留 GPU 进程的完整采样，再补充同 UID 子进程，避免多卡和重叠进程树重复计数。
-      memberByPid.put(p.get("pid"), d);
+  private void attachHostPressure(Map<String,Object> metrics, long server, Instant at) {
+    var host=jdbc.queryForList("SELECT collected_at,details_json FROM metric_host_sample WHERE node_id=? AND collected_at<=? ORDER BY collected_at DESC,id DESC LIMIT 1",server,utc(at));
+    var pressure=new LinkedHashMap<String,Object>();
+    if (!host.isEmpty() && Duration.between(TrainingJobService.instant(host.get(0).get("collected_at")),at).getSeconds()<=30) {
+      var details=MetricDetails.decode((String)host.get(0).get("details_json"));
+      for (String key:List.of("cpuPsiAvg10","memoryPsiAvg10","ioPsiAvg10")) pressure.put(key,details.get(key));
+      pressure.put("sampledAt",TrainingJobService.instant(host.get(0).get("collected_at")).toString());
     }
-    for (var p : ps) {
-      var d = (Map<?, ?>) p.get("details");
-      if (d.get("processTree") instanceof List<?> list)
-        for (Object value : list)
-          if (value instanceof Map<?, ?> child
-              && child.get("pid") != null
-              && child.get("startedAt") != null
-              && d.get("linuxUid") instanceof Number
-              && Objects.equals(child.get("linuxUid"), d.get("linuxUid")))
-            memberByPid.putIfAbsent(child.get("pid"), child);
-    }
-    var members = new ArrayList<Map<String, Object>>();
-    for (var entry : memberByPid.entrySet()) {
-      var d = entry.getValue();
-      members.add(Map.of("pid", entry.getKey(), "startedAt", d.get("startedAt")));
-      cpuKnown &= d.get("cpuPercent") instanceof Number;
-      cpu += n(d.get("cpuPercent"));
-      rssKnown &= d.get("memoryRssBytes") instanceof Number;
-      rss += n(d.get("memoryRssBytes"));
-      ussKnown &= d.get("memoryUssBytes") instanceof Number;
-      uss += n(d.get("memoryUssBytes"));
-      ioKnown &=
-          d.get("readBytesPerSecond") instanceof Number
-              && d.get("writeBytesPerSecond") instanceof Number;
-      read += n(d.get("readBytesPerSecond"));
-      write += n(d.get("writeBytesPerSecond"));
-    }
-    m.put("cpuPercent", cpuKnown ? cpu : null);
-    m.put("rssEstimateBytes", rssKnown ? rss : null);
-    m.put("ussBytes", ussKnown ? uss : null);
-    m.put("readBytesPerSecond", ioKnown ? read : null);
-    m.put("writeBytesPerSecond", ioKnown ? write : null);
-    m.put("gpuMemoryByUuid", perGpu);
-    m.put(
-        "gpuMemoryBytes",
-        gpuKnown
-            ? perGpu.values().stream().mapToDouble(Double::doubleValue).max().orElse(0)
-            : null);
-    m.put("wholeGpuUtilization", cards);
-    m.put("members", members);
-    m.put(
-        "metricScope",
-        "Observed GPU processes and same-UID descendants, capped by Agent; RSS sum is an upper"
-            + " estimate with shared pages, USS excludes shared pages; GPU utilization belongs to"
-            + " whole card; CPU may exceed 100%");
-    var h =
-        jdbc.queryForList(
-            "SELECT details_json FROM metric_host_sample WHERE node_id=? AND collected_at<=? ORDER"
-                + " BY collected_at DESC,id DESC LIMIT 1",
-            server,
-            utc(at));
-    var pressure = new LinkedHashMap<String, Object>();
-    if (!h.isEmpty()) {
-      var d = MetricDetails.decode((String) h.get(0).get("details_json"));
-      for (String key : List.of("cpuPsiAvg10", "memoryPsiAvg10", "ioPsiAvg10"))
-        pressure.put(key, d.get(key));
-    }
-    m.put("hostPressure", pressure);
-    return m;
+    metrics.put("hostPressure",pressure);
   }
 
   private void configure(

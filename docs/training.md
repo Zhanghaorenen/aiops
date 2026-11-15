@@ -96,3 +96,15 @@ SDK 支持 `report(step=30, total_steps=100, step_time=0.5, phase="training")`�
 - `GET /workloads/{id}/resource-suggestion`：具有私人任务权限的指定运行资源建议。
 
 Agent 新增 `analyze_active_workload`、`get_resource_presets`；不会创建资源承诺、启动进程或触发 Shell。此轮不增加数据库表。
+
+## 运行态资源竞争
+
+训练页「已发现的 GPU 任务」提供「资源竞争分析」；只读接口为 `GET /api/servers/{serverId}/training/runtime-contention`，不要求事前登记，也不写入运行记录。复用原有 GPU 快照、进程和主机历史表，固定分析最近30分钟。
+
+按 PID、启动时间、UID 与实际观察到的父子链归组，多卡和重叠子进程只合计一次 CPU、RSS、USS 和进程 IO。缺少 UID 不合并父子进程，缺少启动时间只生成当前快照候选；RSS 含共享页，是上界估计。CPU 是单核百分比，整卡 GPU 利用率不分摊到进程。
+
+仅同一快照的任务可以形成重叠组合；主机指标必须来自该时间点之前30秒内，缺测和断档不补零。返回 `status/window/activeRuns/observedRuns/overlappingRuns/evidence/possibleBottlenecks/missingEvidence/recommendations`。单点共现不证明持续竞争；风险至少需要3个连续、不同时间的采样，组合缺席后重叠区间重新开始。只报告候选压力，不能仅因同时读盘推断数据集竞争或训练变慢；缺少 Step Time、吞吐和设备归属时明确列出。
+
+每窗口最多1800个GPU快照、50000条进程/GPU采样、每快照64组、200种组合；超过上限标记截断并返回 UNKNOWN。详细对齐证据保留最后120点，风险统计仍使用已覆盖的整个窗口。普通成员只得到共享资源摘要，其他用户的 PID、UID、用户名和路径不返回。
+
+采集端需更新后才能上传 `linuxUid/memoryUssBytes/processTreeStatus`；旧采样缺失不会自动补齐。未启用全进程文件追踪、eBPF、数据集访问归因或任何训练进程操作。

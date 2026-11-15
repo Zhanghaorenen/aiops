@@ -11,6 +11,10 @@ import {
   type ResourceSuggestion,
 } from '../utils/resourceSuggestion'
 import TrendChart from './TrendChart.vue'
+import RuntimeContentionPanel from './RuntimeContentionPanel.vue'
+const contention = ref<any>()
+const contentionBusy = ref(false)
+let contentionController: AbortController | undefined
 
 const props = defineProps<{ serverId?: number; planningEnabled?: boolean }>()
 const emit = defineEmits<{ plan: [source: ResourceSuggestion]; presets: [] }>()
@@ -36,6 +40,22 @@ let loadController: AbortController | undefined,
 let epoch = 0,
   loadVersion = 0
 const base = () => `/api/servers/${props.serverId}/training`
+async function analyzeContention() {
+  if (!props.serverId || !store.token || store.demo) return
+  contentionController?.abort()
+  const controller = new AbortController()
+  contentionController = controller
+  const current = epoch
+  contentionBusy.value = true
+  try {
+    const { data } = await api.get(base() + '/runtime-contention', { signal: controller.signal, timeout:30000 })
+    if (current === epoch && !controller.signal.aborted) contention.value = data
+  } catch (e) {
+    if (current === epoch && !controller.signal.aborted) error.value = errorMessage(e)
+  } finally {
+    if (current === epoch && contentionController === controller) contentionBusy.value = false
+  }
+}
 const columns = [
   { title: '任务 / 进程', key: 'task' },
   { title: 'GPU', key: 'gpu' },
@@ -172,6 +192,9 @@ watch(
   [() => props.serverId, () => store.token, () => store.demo],
   () => {
     epoch++
+    contentionController?.abort()
+    contention.value = undefined
+    contentionBusy.value = false
     loadController?.abort()
     analysisController?.abort()
     workloads.value = []
@@ -203,6 +226,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  contentionController?.abort()
   epoch++
   loadController?.abort()
   analysisController?.abort()
@@ -213,6 +237,7 @@ onBeforeUnmount(() => {
     <template #extra
       ><a-space wrap
         ><a-checkbox v-model:checked="activeOnly">仅看运行中</a-checkbox
+        ><a-button :disabled="store.demo || !serverId" :loading="contentionBusy" @click="analyzeContention">资源竞争分析</a-button
         ><a-button
           v-if="planningEnabled"
           :disabled="store.demo || !serverId"
@@ -294,6 +319,7 @@ onBeforeUnmount(() => {
       </template>
     </a-table>
   </a-card>
+  <RuntimeContentionPanel v-if="contention" :report="contention" />
   <a-card
     v-if="selected"
     :title="selected.displayName"

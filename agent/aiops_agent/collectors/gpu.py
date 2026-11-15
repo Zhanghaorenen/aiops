@@ -84,7 +84,7 @@ class GPUInfo:
                     record["name"] = detail.get("name")
                     record["username"] = detail.get("username")
 
-                    record["details"] = {key: detail.get(key) for key in ("cpuPercent","memoryRssBytes","numThreads","startedAt","status","executablePath","workingDirectory","parentPid","readBytes","writeBytes","readBytesPerSecond","writeBytesPerSecond","processTree","processTreeTruncated")}
+                    record["details"] = {key: detail.get(key) for key in ("linuxUid","memoryUssBytes","cpuPercent","memoryRssBytes","numThreads","startedAt","status","executablePath","workingDirectory","parentPid","readBytes","writeBytes","readBytesPerSecond","writeBytesPerSecond","processTree","processTreeTruncated","processTreeStatus")}
                     record["task_type"] = (
                         self.process_collector.classify_task(detail)
                     )
@@ -135,6 +135,8 @@ class GPUInfo:
                 return []
             else:
                 self.collection_status = "AVAILABLE"
+
+            self.process_collector.begin_sample()
 
             for index in range(count):
 
@@ -251,6 +253,7 @@ class GPUInfo:
             return gpus
 
         finally:
+            self.process_collector.end_sample()
             # NVML 成功初始化之后才会执行关闭
             try:
                 pynvml.nvmlShutdown()

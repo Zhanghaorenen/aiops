@@ -61,6 +61,10 @@ public final class MetricDetails {
               "pid,parentPid,name,startedAt,memoryRssBytes,memoryUssBytes,linuxUid,cpuPercent,readBytes,writeBytes,readBytesPerSecond,writeBytesPerSecond"));
       if (input.get("processTreeTruncated") instanceof Boolean truncated)
         result.put("processTreeTruncated", truncated);
+      if (input.get("processTreeStatus") instanceof String status) {
+        if (!Set.of("AVAILABLE", "PARTIAL", "UNAVAILABLE").contains(status)) throw bad();
+        result.put("processTreeStatus", status);
+      }
     }
     String value = JSON.writeValueAsString(result);
     if (value.length() > 65536) throw bad();

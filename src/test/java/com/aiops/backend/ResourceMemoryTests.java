@@ -187,6 +187,7 @@ class ResourceMemoryTests extends ClusterTestSupport {
                 "processTree",
                 List.of(
                     Map.of(
+                        "parentPid",123,
                         "pid",
                         124,
                         "startedAt",
