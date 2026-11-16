@@ -26,6 +26,7 @@ class MultiAgentSupervisor:
         self.graph=build(self)
 
     async def plan(self,state):
+        emit("planning")
         self.budget=Budget(self.timeout)
         try:
             plan=await asyncio.wait_for(router.plan(self.llm,state["question"],state["history"]),self.budget.remaining())
@@ -70,16 +71,20 @@ class MultiAgentSupervisor:
             except Exception:
                 pass
         async def execute(task,ctx):
+            emit("agent_start", agent=task.agent, task_id=task.task_id)
             try:
                 from ...telemetry import span
                 with span(task.agent+'_agent','agent'):
-                    return await classes[task.agent](self.llm,self.tools,self.budget).run(task,ctx)
+                    result = await classes[task.agent](self.llm,self.tools,self.budget).run(task,ctx)
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code in (401,403): raise
-                return AgentResult(agent=task.agent,status="failed",summary="依赖不可用",error_code="DEPENDENCY")
+                result = AgentResult(agent=task.agent,status="failed",summary="依赖不可用",error_code="DEPENDENCY")
             except Exception as exc:
-                return AgentResult(agent=task.agent,status="failed",summary="专业Agent未完成",
+                result = AgentResult(agent=task.agent,status="failed",summary="专业Agent未完成",
                     error_code=type(exc).__name__,limitations=["专业Agent执行失败"])
+            emit("agent_result", agent=task.agent, status=result.status, tool_calls=result.tool_calls,
+                 elapsed_ms=result.elapsed_ms)
+            return result
         tasks=state["plan"].tasks
         results={}
         if state["plan"].execution_mode=="parallel":

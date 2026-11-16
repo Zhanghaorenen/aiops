@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { ref, reactive, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, reactive, watch, onBeforeUnmount } from 'vue'
 import { api, aiApi, errorMessage } from '../api'
+import { useRoute, useRouter } from 'vue-router'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatTime } from '../utils/format'
 import { useNotificationEvents } from '../composables/useNotificationEvents'
 import LongTermMemoryPanel from '../components/LongTermMemoryPanel.vue'
 
+const route = useRoute()
+const router = useRouter()
+const activeTab = computed({
+  get: () => String(route.query.tab ?? 'memory'),
+  set: value => { void router.replace({query:{...route.query, tab:value}}) },
+})
 const store = useWorkspaceStore()
 const subscriptions = ref<any[]>([]),
   notifications = ref<any[]>([]),
@@ -168,7 +175,7 @@ useNotificationEvents(load)
     closable
     @close="error = ''"
   />
-  <a-tabs>
+  <a-tabs v-model:active-key="activeTab">
     <a-tab-pane key="memory" tab="私人记忆">
       <a-card>
         <a-space
@@ -182,6 +189,37 @@ useNotificationEvents(load)
       </a-card>
     </a-tab-pane>
     <a-tab-pane key="reminders" tab="资源提醒">
+      <a-card title="通知历史"
+        ><template #extra
+          ><a-button @click="action(load)">刷新</a-button></template
+        >
+        <a-list :data-source="notifications"
+          ><template #renderItem="{ item }"
+            ><a-list-item
+              ><div>
+                <a-tag
+                  :color="
+                    item.kind === 'ACTUALLY_AVAILABLE' ? 'green' : 'orange'
+                  "
+                  >{{
+                    item.kind === 'ACTUALLY_AVAILABLE' ? '实际可用' : '预计可用'
+                  }}</a-tag
+                ><a-badge
+                  v-if="!item.is_read"
+                  status="processing"
+                  text="未读"
+                />
+                <p>{{ payload(item).message }}</p>
+                <RouterLink v-if="payload(item).serverId" :to="{path:'/gpu',query:{server:payload(item).serverId}}">查看本机 GPU</RouterLink>
+                <span>{{ formatTime(item.created_at) }}</span>
+              </div>
+              <a-button v-if="!item.is_read" @click="readNotification(item.id)"
+                >标为已读</a-button
+              ></a-list-item
+            ></template
+          ></a-list
+        >
+      </a-card>
       <a-card title="新建订阅"
         ><a-space wrap>
           <a-select
@@ -233,36 +271,7 @@ useNotificationEvents(load)
           ></template
         ></a-list
       >
-      <a-card title="通知历史"
-        ><template #extra
-          ><a-button @click="action(load)">刷新</a-button></template
-        >
-        <a-list :data-source="notifications"
-          ><template #renderItem="{ item }"
-            ><a-list-item
-              ><div>
-                <a-tag
-                  :color="
-                    item.kind === 'ACTUALLY_AVAILABLE' ? 'green' : 'orange'
-                  "
-                  >{{
-                    item.kind === 'ACTUALLY_AVAILABLE' ? '实际可用' : '预计可用'
-                  }}</a-tag
-                ><a-badge
-                  v-if="!item.is_read"
-                  status="processing"
-                  text="未读"
-                />
-                <p>{{ payload(item).message }}</p>
-                <span>{{ formatTime(item.created_at) }}</span>
-              </div>
-              <a-button v-if="!item.is_read" @click="readNotification(item.id)"
-                >标为已读</a-button
-              ></a-list-item
-            ></template
-          ></a-list
-        >
-      </a-card>
+
     </a-tab-pane>
     <a-tab-pane key="cases" tab="故障经验">
       <a-space wrap

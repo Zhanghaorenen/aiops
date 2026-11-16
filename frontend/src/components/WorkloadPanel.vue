@@ -12,8 +12,6 @@ import {
 } from '../utils/resourceSuggestion'
 import TrendChart from './TrendChart.vue'
 import RuntimeContentionPanel from './RuntimeContentionPanel.vue'
-import IncidentsView from '../views/IncidentsView.vue'
-const investigationId=ref<number>()
 const investigationBusy=ref(false)
 const investigationKeys=new Map<string,string>()
 async function investigateTask(row:any) {
@@ -24,7 +22,7 @@ async function investigateTask(row:any) {
   try {
     const {data}=await api.post(base()+'/workloads/'+row.runId+'/investigation',{},
       {headers:{'Idempotency-Key':investigationKeys.get(row.runId)}})
-    if(current===epoch) investigationId.value=data.incidentId
+    if(current===epoch) await router.push('/incidents/' + data.incidentId)
     investigationKeys.delete(row.runId)
   } catch(e) {if(current===epoch) error.value=errorMessage(e)}
   finally {if(current===epoch) investigationBusy.value=false}
@@ -211,7 +209,6 @@ watch(
     epoch++
     contentionController?.abort()
     contention.value = undefined
-    investigationId.value=undefined
     investigationBusy.value=false
     contentionBusy.value = false
     loadController?.abort()
@@ -256,7 +253,7 @@ onBeforeUnmount(() => {
     <template #extra
       ><a-space wrap
         ><a-checkbox v-model:checked="activeOnly">仅看运行中</a-checkbox
-        ><a-button :disabled="store.demo || !serverId" :loading="contentionBusy" @click="analyzeContention">资源竞争分析</a-button
+        ><a-button :disabled="store.demo || !serverId" :loading="contentionBusy" @click="analyzeContention">比较本机任务压力</a-button
         ><a-button
           v-if="planningEnabled"
           :disabled="store.demo || !serverId"
@@ -324,7 +321,7 @@ onBeforeUnmount(() => {
         <template v-else-if="column.key === 'actions'"
           ><a-space
             ><a-button size="small" type="primary" @click="inspect(record)"
-              >分析</a-button
+              >查看任务资源</a-button
             ><a-button
               v-if="planningEnabled && record.runId && record.privateDetails"
               size="small"
@@ -339,7 +336,6 @@ onBeforeUnmount(() => {
       </template>
     </a-table>
   </a-card>
-  <IncidentsView v-if="investigationId" :key="investigationId" :incident-id="investigationId" detail-only />
   <RuntimeContentionPanel v-if="contention" :report="contention" />
   <a-card
     v-if="selected"

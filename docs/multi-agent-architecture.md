@@ -43,7 +43,9 @@ AgentTask 指定领域、目标、任务范围与 1–4 次工具预算。AgentR
 
 /api/chat 与 /api/chat/stream 的请求、响应结构不变，API 工厂按开关调用 Supervisor 或 GraphAgent。session_turn 继续负责幂等、历史恢复及最终回答保存。内部专业草稿不输出为用户 token，不作为对话内容持久化。
 
-SSE 保留 tool_start、tool_end、sources、resource_result、token、done、error，并增加 plan、agent_start、agent_result、synthesis。工具事件带 agent 字段，引用和资源数据保持原协议。最终 token 来自经过确定性校验的综合结果。done/error 仍由原 API 请求层发送。
+SSE 保留 tool_start、tool_end、sources、resource_result、token、done、error，并增加 planning、plan、agent_start、agent_result、synthesis。工具事件带 agent 字段，引用和资源数据保持原协议。最终 token 来自经过确定性校验的综合结果。done/error 仍由原 API 请求层发送。
+
+启用后，在「AI 对话」发送问题即可在回答前看到分工、各专家实际调用的工具及执行结果。已完成的回答下可展开「查看协作过程」，重新打开历史会话也可查看本次升级后保存的记录。
 
 PowerShell 本地配置和启动：
 

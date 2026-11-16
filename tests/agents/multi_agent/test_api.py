@@ -70,7 +70,12 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"type":"done"',response.text)
         self.assertEqual(writes[-1]["status"],"COMPLETED")
         self.assertNotIn("内部分析草稿",writes[-1]["answer"])
-        self.assertEqual(json.loads(writes[-1]["metadata"]).keys(),{"sources","resourceResults"})
+        steps = json.loads(writes[-1]["metadata"])["execution"]
+        self.assertEqual([step["type"] for step in steps],
+                         ["planning", "plan", "agent_start", "tool_start", "tool_end", "agent_result", "synthesis"])
+        self.assertEqual(steps[1]["tasks"][0]["agent"], "monitoring")
+        self.assertEqual(steps[3]["agent"], "monitoring")
+        self.assertNotIn("arguments", steps[3])
 
         self.fixture.model_requests.clear()
         def replay(request):

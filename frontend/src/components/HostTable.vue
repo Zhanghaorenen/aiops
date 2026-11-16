@@ -4,8 +4,11 @@ import { Empty, type TableColumnsType } from 'ant-design-vue'
 import { ArrowRightOutlined, DesktopOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import type { Server } from '../api'
 import { formatTime } from '../utils/format'
+import { useWorkspaceStore } from '../stores/workspace'
 import UsageBar from './UsageBar.vue'
 
+const store = useWorkspaceStore()
+const canConnect = computed(() => store.role === 'ADMIN' || store.demo)
 const props = defineProps<{ servers: Server[]; loading?: boolean; compact?: boolean; filtered?: boolean }>()
 const emit = defineEmits<{ select: [id: number]; connect: [] }>()
 const columns = computed<TableColumnsType<Server>>(() => [
@@ -31,7 +34,7 @@ const columns = computed<TableColumnsType<Server>>(() => [
       <a-tooltip v-else-if="column.key === 'action'" title="查看详情"><a-button :aria-label="`查看 ${record.name}`" @click="emit('select', record.id)"><template #icon><ArrowRightOutlined /></template></a-button></a-tooltip>
     </template>
     <template #emptyText>
-      <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" :description="filtered ? '没有匹配的服务器' : '还没有服务器接入'"><a-button v-if="!filtered" type="primary" @click="emit('connect')"><template #icon><PlusOutlined /></template>接入第一台服务器</a-button></a-empty>
+      <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" :description="filtered ? '没有匹配的服务器' : canConnect ? '还没有服务器接入' : '暂无可查看的服务器，请联系管理员分配权限'"><a-button v-if="!filtered && canConnect" type="primary" @click="emit('connect')"><template #icon><PlusOutlined /></template>接入第一台服务器</a-button></a-empty>
     </template>
   </a-table>
 </template>

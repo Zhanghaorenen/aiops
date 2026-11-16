@@ -49,7 +49,10 @@ const theme = {
 
 function onMenuClick({ key }: { key: string | number }) {
   mobileMenuOpen.value = false
-  void router.push(`/${key}`)
+  const server = route.params.id && page.value === 'servers' ? route.params.id : route.query.server
+  if (server && ['gpu', 'training', 'reservations'].includes(String(key)))
+    void router.push({ path: '/' + key, query: { server: String(server) } })
+  else void router.push('/' + key)
 }
 
 function signOut() {
@@ -174,7 +177,7 @@ watch(
           mode="inline"
           theme="dark"
           :selected-keys="[page]"
-          :default-open-keys="['resources', 'operations']"
+          :default-open-keys="['resources']"
           @click="onMenuClick"
         >
           <a-menu-item key="overview"
@@ -186,14 +189,10 @@ watch(
             ><template #title>资源管理</template>
             <a-menu-item key="servers">服务器管理</a-menu-item
             ><a-menu-item key="gpu">GPU 监控与进程</a-menu-item
-            ><a-menu-item key="training">训练任务协同</a-menu-item
+            ><a-menu-item key="training">训练任务</a-menu-item
             ><a-menu-item key="reservations">GPU 资源预约</a-menu-item>
           </a-sub-menu>
-          <a-sub-menu key="operations"
-            ><template #icon><SafetyCertificateOutlined /></template
-            ><template #title>告警中心</template
-            ><a-menu-item key="alerts">事件与告警策略</a-menu-item></a-sub-menu
-          >
+          <a-menu-item key="alerts"><template #icon><SafetyCertificateOutlined /></template>告警与调查</a-menu-item>
           <a-menu-item key="ai"
             ><template #icon><RobotOutlined /></template>AI 助手</a-menu-item
           >
@@ -226,8 +225,9 @@ watch(
           >
           <a-space :size="12" wrap>
             <a-tag v-if="store.demo" color="gold">演示数据</a-tag>
+            <RouterLink v-if="!store.demo" to="/personal?tab=reminders">资源提醒</RouterLink>
             <span class="user-label"
-              ><UserOutlined /> {{ store.username || '管理员' }}</span
+              ><UserOutlined /> {{ store.username || '当前用户' }}</span
             >
             <a-tooltip title="退出登录"
               ><a-button aria-label="退出登录" @click="signOut"
@@ -292,12 +292,12 @@ watch(
               ><a-button @click="store.refresh">重试</a-button></template
             ></a-alert
           >
-          <RouterView :key="viewIdentity" />
-          <footer class="content-footer">
+          <RouterView :key="page === 'training' ? viewIdentity + ':training:' + (route.query.server ?? store.servers.find(s => s.status === 'ONLINE')?.id ?? store.servers[0]?.id ?? '') : viewIdentity" />
+          <footer v-if="['overview', 'servers'].includes(page)" class="content-footer">
             <span
               >{{
                 store.updatedAt
-                  ? `数据更新于 ${formatTime(store.updatedAt)}`
+                  ? `服务器列表同步于 ${formatTime(store.updatedAt)}`
                   : '等待首次同步'
               }}{{ store.autoRefresh ? ' · 每 30 秒刷新' : '' }}</span
             >

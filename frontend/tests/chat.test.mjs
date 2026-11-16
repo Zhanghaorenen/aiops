@@ -8,7 +8,7 @@ import { createSSRApp, effectScope, h, shallowRef } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { createPinia, setActivePinia } from 'pinia'
 import { createServer as createHttpServer } from 'node:http'
-import { routerKey } from 'vue-router'
+import { routerKey, routeLocationKey } from 'vue-router'
 
 let vite, chat, apiModule, ChatView, storeModule
 const storage = new Map()
@@ -628,4 +628,59 @@ test('trace timelines render the recorded steps, latency and provider usage', as
   }},{traceId:id}).use(pinia)
   const html=await renderToString(app)
   for(const value of [id,'llm.chat','71 ms','fixture-model','11','7 tokens']) assert.ok(html.includes(value))
+})
+
+test('chat renders interleaved specialist events before the final answer and records them per turn', async () => {
+  const gate = defer()
+  const steps = [
+    {type:'planning'},
+    {type:'plan',execution_mode:'parallel',tasks:[{agent:'monitoring',objective:'读取 GPU 指标'},{agent:'knowledge',objective:'检索手册'}]},
+    {type:'agent_start',agent:'monitoring'}, {type:'agent_start',agent:'knowledge'},
+    {type:'tool_start',agent:'knowledge',name:'search_knowledge'},
+    {type:'tool_end',agent:'knowledge',name:'search_knowledge',ok:false},
+    {type:'agent_result',agent:'knowledge',status:'partial',tool_calls:1,elapsed_ms:1200},
+    {type:'agent_result',agent:'monitoring',status:'success',tool_calls:2,elapsed_ms:2300},
+    {type:'synthesis'},
+  ]
+  let emit
+  const instance=chat.useAiChat(signedIn, async (_request,_signal,sendEvent)=>{
+    emit=sendEvent
+    for (const step of steps) emit(step)
+    return gate.promise
+  })
+  const Panel=(await vite.ssrLoadModule('/src/components/AgentExecution.vue')).default
+  instance.input.value='检查 GPU'
+  const pending=instance.send()
+  assert.equal(instance.streamingAnswer.value,'')
+  assert.deepEqual(instance.execution.value,steps)
+  const html=await renderToString(createSSRApp(Panel,{steps:instance.execution.value,state:'live'}))
+  for (const label of ['实时协作','并行检查','监控专家开始检查','知识库专家 · 检索运维知识库 · 失败','证据不完整','汇总证据']) assert.ok(html.includes(label))
+  gate.resolve({answer:'已完成检查'})
+  await pending
+  assert.deepEqual(instance.messages.value[1].execution,steps)
+  instance.reset()
+  emit(steps[0])
+  assert.deepEqual(instance.execution.value,[])
+})
+
+test('server selection restores a linked host and never falls back from an inaccessible target', async () => {
+  const {useServerSelection} = await vite.ssrLoadModule('/src/composables/useServerSelection.ts')
+  for (const [query, expected] of [[{server:'12'},12],[{server:'99'},undefined],[{},7]]) {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = storeModule.useWorkspaceStore()
+    store.servers = [{id:7,status:'ONLINE'},{id:12,status:'OFFLINE'}]
+    store.updatedAt = new Date().toISOString()
+    const replaces = []
+    const app = createSSRApp({setup(){
+      const {server, unavailable} = useServerSelection()
+      assert.equal(server.value,expected)
+      assert.equal(unavailable.value,query.server === '99')
+      return () => h('span')
+    }}).use(pinia)
+    app.provide(routeLocationKey,{query})
+    app.provide(routerKey,{replace:location => replaces.push(location)})
+    await renderToString(app)
+    assert.deepEqual(replaces,query.server ? [] : [{query:{server:'7'}}])
+  }
 })

@@ -119,6 +119,22 @@ async def chat(payload: ChatRequest, request: Request,
             raise HTTPException(status_code=502, detail="模型或平台响应异常，请稍后重试") from exc
 
 
+def execution_step(event: dict):
+    """Store only public progress fields, never tool arguments or model drafts."""
+    kind = event.get("type")
+    if kind == "plan":
+        return {"type": kind, "execution_mode": event["execution_mode"],
+                "clarification": bool(event.get("clarification")),
+                "tasks": [{"agent": task["agent"], "objective": task["objective"][:240]}
+                          for task in event["tasks"]]}
+    if kind in ("planning", "synthesis"):
+        return {"type": kind}
+    if kind in ("agent_start", "agent_result", "tool_start", "tool_end") and event.get("agent"):
+        return {key: event[key] for key in
+                ("type", "agent", "status", "name", "ok", "tool_calls", "elapsed_ms") if key in event}
+    return None
+
+
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
@@ -172,6 +188,7 @@ async def chat_stream(payload: ChatRequest, request: Request,
                         yield _sse({"type": "token", "text": turn.replay})
                     else:
                         answer, sources, resource_results = '', [], []
+                        execution = []
                         with anyio.fail_after(settings.chat_timeout):
                             async for event in agent.astream(payload.question, turn.history):
                                 if event.get('type') == 'token':
@@ -182,8 +199,11 @@ async def chat_stream(payload: ChatRequest, request: Request,
                                     resource_results.append({'name': event['name'], 'data': event['data']})
                                 elif event.get('type') == 'answer':
                                     answer = event.get('text', answer)
+                                step = execution_step(event)
+                                if step is not None:
+                                    execution.append(step)
                                 yield _sse(event)
-                        await turn.complete(answer, sources, resource_results)
+                        await turn.complete(answer, sources, resource_results, execution)
                     yield _sse({"type": "done", **({'trace_id': current().trace_id} if current() else {})})
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code

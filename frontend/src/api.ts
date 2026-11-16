@@ -230,9 +230,18 @@ export interface ChatResponse {
   answer: string
 }
 
+export type Specialist = 'monitoring' | 'workload' | 'knowledge'
+export type ExecutionStep =
+  | { type: 'planning' | 'synthesis' }
+  | { type: 'plan'; execution_mode: 'parallel' | 'sequential'; tasks: { agent: Specialist; objective: string }[]; clarification?: string | boolean | null }
+  | { type: 'agent_start'; agent: Specialist }
+  | { type: 'agent_result'; agent: Specialist; status: 'success' | 'partial' | 'failed' | 'skipped'; tool_calls: number; elapsed_ms: number }
+  | { type: 'tool_start' | 'tool_end'; agent: Specialist; name: string; ok?: boolean }
+
 export type ChatStreamEvent =
+  | ExecutionStep
   | { type: 'token'; text: string }
-  | { type: 'tool_start' | 'tool_end'; name: string; ok?: boolean }
+  | { type: 'tool_start' | 'tool_end'; name: string; agent?: Specialist; ok?: boolean }
   | { type: 'sources'; results: RagSearchResult[] }
   | { type: 'resource_result'; name: string; data: Record<string, any> }
   | { type: 'done'; trace_id?: string }

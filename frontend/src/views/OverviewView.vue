@@ -54,7 +54,7 @@ const heatLabel = ref('主机温度'),
   heatHosts = ref(0)
 const gpuTotal = ref<number | null>(null),
   gpuLoad = ref<number | null>(null),
-  alertCount = ref<number | null>(null),
+  openAlerts = ref<{id:number; severity:string; server_id:number; last_observed_at:string}[] | null>(null),
   clusterCpu = ref<{ at: string; value: number | null }[]>([]),
   clusterMemory = ref<{ at: string; value: number | null }[]>([])
 watch(
@@ -63,6 +63,19 @@ watch(
     if (store.demo || !store.token) return
     const controller = new AbortController()
     cleanup(() => controller.abort())
+    void (async () => {
+      try {
+        const { data } = await api.get('/api/alerts', {
+          signal: controller.signal,
+        })
+        if (!controller.signal.aborted)
+          openAlerts.value = data.filter((e: any) => e.status !== 'RESOLVED').sort((a: any, b: any) =>
+            Number(b.severity === 'CRITICAL') - Number(a.severity === 'CRITICAL') ||
+            Date.parse(b.last_observed_at) - Date.parse(a.last_observed_at))
+      } catch {
+        if (!controller.signal.aborted) openAlerts.value = null
+      }
+    })()
     void (async () => {
       const to = new Date(),
         from = new Date(+to - 3600000).toISOString()
@@ -90,17 +103,6 @@ watch(
       gpuLoad.value = fresh.length
         ? fresh.reduce((n, r) => n + r.averageGpuUtilization, 0) / fresh.length
         : null
-      try {
-        const { data } = await api.get('/api/alerts', {
-          signal: controller.signal,
-        })
-        if (!controller.signal.aborted)
-          alertCount.value = data.filter(
-            (e: any) => e.status !== 'RESOLVED',
-          ).length
-      } catch {
-        if (!controller.signal.aborted) alertCount.value = null
-      }
       const temperatures = await Promise.allSettled(
         store.servers.map((s) =>
           api.get(`/api/servers/${s.id}/metrics/latest`, {
@@ -166,6 +168,53 @@ watch(
 </script>
 
 <template>
+  <div class="overview-lower triage-grid">
+    <section>
+      <div class="section-heading"><h2>待处理告警</h2><RouterLink to="/alerts?status=UNRESOLVED">查看全部</RouterLink></div>
+      <a-empty v-if="!openAlerts?.length" :image="Empty.PRESENTED_IMAGE_SIMPLE"
+        :description="openAlerts === null ? (store.demo ? '演示环境没有实时告警' : '尚无可用告警数据') : '当前没有未恢复告警'" />
+      <RouterLink v-for="alert in openAlerts?.slice(0, 3)" :key="alert.id" class="attention-row"
+        :to="{path:'/alerts',query:{event:alert.id,status:'UNRESOLVED'}}">
+        <a-tag :color="alert.severity === 'CRITICAL' ? 'red' : 'orange'">{{ alert.severity === 'CRITICAL' ? '严重' : alert.severity === 'WARNING' ? '警告' : '提示' }}</a-tag>
+        <span><strong>{{ store.servers.find(s => s.id === alert.server_id)?.name || '服务器 #' + alert.server_id }}</strong>
+          <small>告警 #{{ alert.id }} · 最近观测 {{ formatTime(alert.last_observed_at) }}</small></span>
+        <ArrowRightOutlined />
+      </RouterLink>
+    </section>
+    <section>
+      <div class="section-heading">
+        <h2>
+          需要关注 <a-tag>{{ attention.length }}</a-tag>
+        </h2>
+        <a-tooltip title="离线主机，或任一资源使用率达到 80%"
+          ><span class="muted compact">状态与资源检查</span></a-tooltip
+        >
+      </div>
+      <button
+        v-for="server in attention.slice(0, 5)"
+        :key="server.id"
+        class="attention-row"
+        @click="selectServer(server.id)"
+      >
+        <span
+          class="connection-dot"
+          :class="server.status === 'ONLINE' ? 'warm' : 'bad'"
+        /><span
+          ><strong>{{ server.name }}</strong
+          ><small>{{
+            server.status !== 'ONLINE'
+              ? `主机离线 · 最后心跳 ${formatTime(server.lastSeenAt)}`
+              : `资源使用率较高 · CPU ${formatPercent(server.cpuUsage)} / 内存 ${formatPercent(server.memoryUsage)} / 磁盘 ${formatPercent(server.diskUsage)}`
+          }}</small></span
+        ><ArrowRightOutlined />
+      </button>
+      <a-empty
+        v-if="!attention.length"
+        :image="Empty.PRESENTED_IMAGE_SIMPLE"
+        :description="store.loading ? '正在读取主机状态' : store.error ? '主机状态暂不可用' : '暂无需要关注的主机'"
+      />
+    </section>
+  </div>
   <div class="summary-grid">
     <SummaryStat
       label="服务器总量"
@@ -180,7 +229,7 @@ watch(
     <SummaryStat label="已读取 GPU" :value="gpuTotal ?? '—'" suffix="张"
       ><DatabaseOutlined
     /></SummaryStat>
-    <SummaryStat label="未恢复告警" :value="alertCount ?? '—'" suffix="项"
+    <SummaryStat label="未恢复告警" :value="openAlerts?.length ?? '—'" suffix="项"
       ><DashboardOutlined
     /></SummaryStat>
   </div>
@@ -235,7 +284,7 @@ watch(
     @select="selectServer"
     @connect="router.push('/access')"
   />
-  <div class="overview-lower">
+  <div>
     <section>
       <div class="section-heading">
         <h2>CPU 使用率排行</h2>
@@ -261,38 +310,14 @@ watch(
         description="暂无在线采样"
       />
     </section>
-    <section>
-      <div class="section-heading">
-        <h2>
-          需要关注 <a-tag>{{ attention.length }}</a-tag>
-        </h2>
-        <a-tooltip title="离线主机，或任一资源使用率达到 80%"
-          ><span class="muted compact">状态与资源检查</span></a-tooltip
-        >
-      </div>
-      <button
-        v-for="server in attention"
-        :key="server.id"
-        class="attention-row"
-        @click="selectServer(server.id)"
-      >
-        <span
-          class="connection-dot"
-          :class="server.status === 'ONLINE' ? 'warm' : 'bad'"
-        /><span
-          ><strong>{{ server.name }}</strong
-          ><small>{{
-            server.status !== 'ONLINE'
-              ? `主机离线 · 最后心跳 ${formatTime(server.lastSeenAt)}`
-              : `资源使用率较高 · CPU ${formatPercent(server.cpuUsage)} / 内存 ${formatPercent(server.memoryUsage)} / 磁盘 ${formatPercent(server.diskUsage)}`
-          }}</small></span
-        ><ArrowRightOutlined />
-      </button>
-      <a-empty
-        v-if="!attention.length"
-        :image="Empty.PRESENTED_IMAGE_SIMPLE"
-        description="暂无需要关注的主机"
-      />
-    </section>
+
   </div>
 </template>
+
+<style scoped>
+.triage-grid { margin: 0 0 20px; gap: 16px; }
+.triage-grid section { min-width: 0; padding: 12px 18px; border: 1px solid var(--edge); border-radius: 10px; background: var(--surface); }
+.triage-grid .section-heading { margin: 0 0 8px; }
+.triage-grid .attention-row:last-child { border-bottom: 0; }
+@media (max-width: 760px) { .triage-grid { grid-template-columns: minmax(0, 1fr); } }
+</style>

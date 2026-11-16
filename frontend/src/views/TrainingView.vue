@@ -12,14 +12,16 @@ import { api, errorMessage } from '../api'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatTime } from '../utils/format'
 import TrendChart from '../components/TrendChart.vue'
+import { useServerSelection } from '../composables/useServerSelection'
 import WorkloadPanel from '../components/WorkloadPanel.vue'
 import {
   resourceSuggestionPatch,
   confidenceText,
   type ResourceSuggestion,
 } from '../utils/resourceSuggestion'
+const { server, unavailable } = useServerSelection()
+const section = ref('running')
 const store = useWorkspaceStore(),
-  server = ref<number>(),
   items = ref<any[]>([]),
   detail = ref<any>(),
   report = ref<any>(),
@@ -66,6 +68,7 @@ const presets = ref<ResourceSuggestion[]>([]),
   plannerElement = ref<HTMLElement | null>(null)
 let pageEpoch = 0
 function openPlanner() {
+  section.value = 'plans'
   showPlanner.value = true
   if (!form.start)
     form.start = new Date(
@@ -140,14 +143,6 @@ async function load() {
     if (current === pageEpoch) detail.value = data
   }
 }
-watch(
-  () => store.servers,
-  (s) => {
-    if (!s.some((x) => x.id === server.value))
-      server.value = s.find((x) => x.status === 'ONLINE')?.id ?? s[0]?.id
-  },
-  { immediate: true },
-)
 watch(server, () => {
   pageEpoch++
   items.value = []
@@ -158,8 +153,9 @@ watch(server, () => {
   detail.value = undefined
   report.value = undefined
   editing.value = undefined
+  section.value = 'running'
   void run(load)
-})
+}, { immediate: true })
 let timer: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
   timer = setInterval(() => {
@@ -329,6 +325,7 @@ function processTree() {
       style="min-width: 240px"
       :options="store.servers.map((s) => ({ value: s.id, label: s.name }))"
     />
+    <RouterLink v-if="server" :to="{path:'/gpu', query:{server}}">查看本机 GPU</RouterLink>
     <a-button
       v-if="canPlan"
       type="primary"
@@ -339,12 +336,15 @@ function processTree() {
   </div>
   <a-alert v-if="error" :message="error" type="error" show-icon />
   <a-alert v-if="store.demo" message="训练任务需要登录真实环境" type="info" />
-  <WorkloadPanel
+  <a-alert v-if="unavailable" type="warning" message="该服务器不存在或当前账户无权查看，请重新选择" />
+  <a-segmented v-model:value="section" style="margin: 16px 0" :options="[{label:'运行任务',value:'running'}, {label:'资源计划',value:'plans'}]" />
+  <WorkloadPanel v-if="section === 'running' && server" :key="server"
     :server-id="server"
     :planning-enabled="canPlan"
     @plan="applySuggestion"
     @presets="openPresets"
   />
+  <template v-if="section === 'plans' && server">
   <div ref="plannerElement">
     <a-card
       v-if="canPlan && showPlanner"
@@ -435,9 +435,7 @@ function processTree() {
       >
     </a-card>
   </div>
-  <a-collapse style="margin-top: 18px"
-    ><a-collapse-panel key="plans" header="资源计划"
-      ><a-card title="已登记的资源计划" style="margin-top: 18px"
+  <a-card title="已登记的资源计划" style="margin-top: 18px"
         ><a-table
           :data-source="items"
           row-key="id"
@@ -464,10 +462,7 @@ function processTree() {
               record.state
             }}</a-tag></template
           ></a-table
-        ></a-card
-      >
-    </a-collapse-panel></a-collapse
-  >
+        ></a-card>
   <a-card
     v-if="detail"
     :title="detail.task_name + ' · ' + detail.state"
@@ -647,10 +642,11 @@ function processTree() {
         style="margin-top: 12px"
       />
       <p class="muted">{{ report.conclusion }}</p>
-      <pre class="drawer-evidence">{{ JSON.stringify(report, null, 2) }}</pre>
+      <details><summary>查看完整分析数据</summary><pre class="drawer-evidence">{{ JSON.stringify(report, null, 2) }}</pre></details>
     </div>
   </a-card>
-  <a-collapse v-if="store.role === 'ADMIN'" style="margin-top: 18px"
+  </template>
+  <a-collapse v-if="server && store.role === 'ADMIN'" style="margin-top: 18px"
     ><a-collapse-panel key="admin" header="管理员：资源策略与 Linux 身份绑定"
       ><a-space wrap
         ><a-input-number

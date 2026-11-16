@@ -18,6 +18,7 @@ const workspace = useWorkspaceStore(),
   bases = ref<KnowledgeBase[]>([]),
   documents = ref<KnowledgeDocument[]>([]),
   selected = ref<number>(),
+  creating = ref(false),
   busy = ref(false),
   error = ref(''),
   tab = ref('documents'),
@@ -66,6 +67,8 @@ async function create() {
     })
     selected.value = data.id
     name.value = ''
+    description.value = ''
+    creating.value = false
     await load()
   })
 }
@@ -214,6 +217,10 @@ const columns = [
 ]
 </script>
 <template>
+  <a-modal v-model:open="creating" title="新建知识库" ok-text="创建" :ok-button-props="{disabled:!name.trim()}" :confirm-loading="busy" @ok="create">
+    <a-form layout="vertical"><a-form-item label="名称"><a-input v-model:value="name" :maxlength="160" /></a-form-item>
+      <a-form-item label="简介（可选）"><a-textarea v-model:value="description" :maxlength="1000" /></a-form-item></a-form>
+  </a-modal>
   <div class="table-toolbar">
     <a-button type="primary" @click="tab = 'templates'">从模板开始</a-button>
   </div>
@@ -226,17 +233,8 @@ const columns = [
         "
         placeholder="选择私人知识库"
         style="min-width: 280px"
-      /><a-input
-        v-model:value="name"
-        placeholder="新知识库名称"
-        :maxlength="160"
-      /><a-input
-        v-model:value="description"
-        placeholder="简介（可选）"
-        :maxlength="1000"
-      /><a-button :loading="busy" :disabled="!name.trim()" @click="create"
-        >创建知识库</a-button
-      ><a-popconfirm
+      /><a-button @click="creating = true">新建知识库</a-button>
+      <a-popconfirm
         v-if="selected"
         title="删除知识库及其原文件和索引？"
         @confirm="removeBase"

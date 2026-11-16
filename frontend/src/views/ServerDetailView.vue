@@ -22,7 +22,10 @@ const hours = ref(6)
 const samples = ref<MetricSample[]>([])
 const loading = ref(false)
 const error = ref('')
-const tab = ref('host')
+const tab = computed({
+  get: () => ['gpu','usage','samples'].includes(String(route.query.tab)) ? String(route.query.tab) : 'host',
+  set: value => { void router.replace({query:{...route.query, tab:value}}) },
+})
 const latest = ref<any>(null)
 const stats = ref<Record<string, any>>({}),
   events = ref<any[]>([]),
@@ -49,6 +52,11 @@ watch(
   ],
   (_, __, onCleanup) => {
     samples.value = []
+    latest.value = null
+    stats.value = {}
+    rawCount.value = 0
+    events.value = []
+    rules.value = []
     error.value = ''
     if (!server.value) return
     const controller = new AbortController()
@@ -64,7 +72,7 @@ watch(
           latest.value = samples.value.at(-1)
           return
         }
-        const [trend, current, alertData, ruleData] = await Promise.all([
+        const [trend, current, alertData, ruleData] = await Promise.allSettled([
           api.get(`/api/servers/${server.value.id}/metrics/trends`, {
             signal: controller.signal,
             params: {
@@ -81,17 +89,16 @@ watch(
           api.get('/api/alert-rules', { signal: controller.signal }),
         ])
         if (!controller.signal.aborted) {
-          samples.value = trend.data.samples
-          stats.value = trend.data.stats
-          rawCount.value = trend.data.rawCount
-          latest.value = current.data
-          events.value = alertData.data.filter(
-            (e: any) => e.server_id === server.value!.id,
-          )
-          rules.value = ruleData.data.filter(
-            (r: any) => r.server_id === server.value!.id,
-          )
-          error.value = ''
+          samples.value = trend.status === 'fulfilled' ? trend.value.data.samples : []
+          stats.value = trend.status === 'fulfilled' ? trend.value.data.stats : {}
+          rawCount.value = trend.status === 'fulfilled' ? trend.value.data.rawCount : 0
+          latest.value = current.status === 'fulfilled' ? current.value.data : null
+          const target = server.value?.id
+          events.value = alertData.status === 'fulfilled' ? alertData.value.data.filter((e:any) => e.server_id === target) : []
+          rules.value = ruleData.status === 'fulfilled' ? ruleData.value.data.filter((r:any) => r.server_id === target) : []
+          const missing = [trend, current, alertData, ruleData].flatMap((result,i) =>
+            result.status === 'rejected' ? [['历史趋势','最新采样','关联告警','告警规则'][i]] : [])
+          error.value = missing.length ? missing.join('、') + '暂不可用' : ''
         }
       } catch (err) {
         if (!controller.signal.aborted) error.value = errorMessage(err)
@@ -113,6 +120,7 @@ watch(
 )
 
 watch([tab, () => server.value?.id, hours], (_, __, cleanup) => {
+  rawSamples.value = []
   if (tab.value !== 'samples' || !server.value || store.demo) return
   const controller = new AbortController()
   cleanup(() => controller.abort())
@@ -132,7 +140,7 @@ watch([tab, () => server.value?.id, hours], (_, __, cleanup) => {
     .catch((e) => {
       if (!controller.signal.aborted) error.value = errorMessage(e)
     })
-})
+}, {immediate:true})
 function exportCsv() {
   if (!samples.value.length || !server.value) return
   const csv =
@@ -159,7 +167,7 @@ function exportCsv() {
   <template v-if="server">
     <div class="detail-heading">
       <a-space wrap
-        ><a-button @click="router.push('/servers')"
+        ><a-button @click="router.push({path:'/servers', query:{search:route.query.search, status:route.query.status}})"
           ><template #icon><ArrowLeftOutlined /></template>返回列表</a-button
         >
         <h2>{{ server.name }}</h2>
@@ -175,7 +183,13 @@ function exportCsv() {
       class="error-banner"
       :message="`服务器已离线，以下为历史采样。最后心跳：${formatTime(server.lastSeenAt)}`"
     />
-    <ResourceGuardPanel :server-id="server.id" />
+    <div class="table-toolbar">
+      <span class="muted">资源采样 {{ formatTime(latest?.collectedAt ?? server.latestMetricAt) }}</span>
+      <a-space wrap>
+        <RouterLink :to="{path:'/training', query:{server:server.id}}">查看本机训练任务</RouterLink>
+        <RouterLink :to="{path:'/ai', query:{question:'检查服务器 ' + server.id + ' 的当前资源压力，并说明判断依据。'}}">询问 AI</RouterLink>
+      </a-space>
+    </div>
     <div v-if="tab !== 'host'" class="metric-strip">
       <div v-for="(key, index) in metricKeys" :key="key">
         <span class="muted">{{
@@ -280,14 +294,14 @@ function exportCsv() {
         </a-descriptions>
       </a-tab-pane>
       <a-tab-pane key="usage" tab="GPU 时间预约"
-        ><GpuUsage
+        ><GpuUsage :key="server.id"
           v-if="server && !store.demo"
           :server-id="server.id" /><a-alert
           v-else
           message="请登录真实环境登记任务"
       /></a-tab-pane>
       <a-tab-pane key="gpu" tab="GPU 监控"
-        ><GpuMonitor :server-id="server.id"
+        ><GpuMonitor :key="server.id" :server-id="server.id"
       /></a-tab-pane>
       <a-tab-pane key="samples" :tab="`原始采样 (${rawSamples.length})`"
         ><a-table
@@ -305,13 +319,14 @@ function exportCsv() {
         ></a-tab-pane
       >
     </a-tabs>
+    <ResourceGuardPanel v-if="tab === 'host'" :key="server.id" :server-id="server.id" />
   </template>
   <a-spin v-else :spinning="store.loading"
     ><a-empty
       :description="
         store.error ? '暂时无法加载服务器' : '服务器不存在或尚未接入'
       "
-      ><a-button @click="router.push('/servers')">返回列表</a-button></a-empty
+      ><a-button @click="router.push({path:'/servers', query:{search:route.query.search, status:route.query.status}})">返回列表</a-button></a-empty
     ></a-spin
   >
 </template>

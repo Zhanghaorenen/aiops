@@ -1,3 +1,4 @@
+import { toolLabels } from '../utils/chatToolLabels'
 import { computed, ref } from 'vue'
 import {
   errorMessage,
@@ -6,6 +7,7 @@ import {
   type ChatRequest,
   type ChatResponse,
   type ChatStreamEvent,
+  type ExecutionStep,
   type RagSearchResult,
 } from '../api'
 
@@ -57,6 +59,7 @@ export function useAiChat(
   const input = ref('')
   const messages = ref<
     (ChatHistoryMessage & {
+      execution?: ExecutionStep[]
       traceId?: string
       sources?: RagSearchResult[]
       resourceResults?: { name: string; data: Record<string, any> }[]
@@ -68,6 +71,7 @@ export function useAiChat(
   const pendingQuestion = ref('')
   const streamingAnswer = ref('')
   const toolActivity = ref('')
+  const execution = ref<ExecutionStep[]>([])
   const resourceResults = ref<{ name: string; data: Record<string, any> }[]>([])
   let active: AbortController | null = null
   let failedRequest: ChatRequest | null = null
@@ -92,6 +96,7 @@ export function useAiChat(
 
   function reset() {
     cancel()
+    execution.value = []
     messages.value = []
     input.value = ''
     error.value = ''
@@ -131,6 +136,7 @@ export function useAiChat(
       }
     }
     const controller = new AbortController()
+    execution.value = []
     active = controller
     sending.value = true
     error.value = ''
@@ -146,6 +152,12 @@ export function useAiChat(
     try {
       const response = await transport(request, controller.signal, (event) => {
         if (active !== controller || controller.signal.aborted) return
+        if (event.type === 'planning' || event.type === 'plan' || event.type === 'synthesis' ||
+            event.type === 'agent_start' || event.type === 'agent_result') {
+          execution.value.push(event)
+        } else if ((event.type === 'tool_start' || event.type === 'tool_end') && event.agent) {
+          execution.value.push({ ...event, agent: event.agent })
+        }
         if (event.type === 'done') {
           traceId=event.trace_id
         } else if (event.type === 'resource_result') {
@@ -158,29 +170,7 @@ export function useAiChat(
           streamingAnswer.value += event.text
           toolActivity.value = ''
         } else if (event.type === 'tool_start') {
-          const labels: Record<string, string> = {
-            search_knowledge: '检索运维知识库',
-            list_servers: '查询服务器列表',
-            get_server_status: '查询服务器状态',
-            get_server_resource_usage: '查询主机指标',
-            list_gpus: '查询 GPU 列表',
-            get_gpu_status: '查询 GPU 状态',
-            get_gpu_overview: '汇总 GPU 指标',
-            get_gpu_processes: '查询 GPU 进程',
-            get_gpu_history: '查询 GPU 历史',
-            analyze_gpu_health: '分析 GPU 健康度',
-            compare_gpu_load: '比较 GPU 负载',
-            recommend_gpu_placement: '生成 GPU 调度建议',
-            get_active_workloads: '查询运行任务',
-            analyze_active_workload: '分析已运行任务',
-            get_resource_presets: '查询历史资源建议',
-            get_workload_profile: '读取历史资源画像',
-            estimate_available_capacity: '计算资源预算',
-            predict_workload_completion: '预测完成时间',
-            search_similar_incidents: '检索已验证经验',
-            get_private_memories: '读取已确认的私人记忆',
-          }
-          toolActivity.value = `${labels[event.name] ?? '执行只读查询'}…`
+          toolActivity.value = `${toolLabels[event.name] ?? '执行只读查询'}…`
         } else if (event.type === 'tool_end') {
           toolActivity.value =
             event.ok === false
@@ -201,6 +191,7 @@ export function useAiChat(
         {
           role: 'assistant',
           content: response.answer,
+          ...(execution.value.length ? {execution: [...execution.value]} : {}),
           ...(traceId ? {traceId} : {}),
           sources,
           resourceResults: [...resourceResults.value],
@@ -208,6 +199,7 @@ export function useAiChat(
       )
       pendingQuestion.value = ''
       failedRequest = null
+      execution.value = []
       streamingAnswer.value = ''
       toolActivity.value = ''
     } catch (err) {
@@ -233,6 +225,7 @@ export function useAiChat(
     pendingQuestion,
     streamingAnswer,
     toolActivity,
+    execution,
     resourceResults,
     canRetry,
     send,

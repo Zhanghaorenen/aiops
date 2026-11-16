@@ -11,8 +11,17 @@ import ResourceGauge from '../components/ResourceGauge.vue'
 const route = useRoute(),
   router = useRouter(),
   store = useWorkspaceStore()
-const tab = ref(String(route.query.tab ?? 'events')),
-  presets = ref<any[]>([]),
+const tab = computed({
+  get: () => String(route.query.tab ?? 'events'),
+  set: value => { void router.replace({query: {...route.query, tab: value}}) },
+})
+const filter = computed({
+  get: () => String(route.query.status ?? 'UNRESOLVED'),
+  set: value => { void router.replace({query: {...route.query, status: value}}) },
+})
+const statusLabels: Record<string,string> = { FIRING:'待确认', ACKNOWLEDGED:'已确认', RESOLVED:'已恢复' }
+const severityLabels: Record<string,string> = { CRITICAL:'严重', WARNING:'警告', INFO:'提示' }
+const presets = ref<any[]>([]),
   rules = ref<any[]>([]),
   events = ref<any[]>([]),
   busy = ref(false),
@@ -24,8 +33,7 @@ const tab = ref(String(route.query.tab ?? 'events')),
   drawer = ref<any>(null),
   incidentId = ref<number>(),
   editing = ref<number>(),
-  advanced = ref<string[]>([]),
-  filter = ref('')
+  advanced = ref<string[]>([])
 const canManage = computed(() => ['ADMIN', 'OPERATOR'].includes(store.role))
 const names: Record<string, string> = {
   CPU_HIGH: 'CPU 高占用',
@@ -66,16 +74,19 @@ const unresolved = computed(() =>
 async function load() {
   if (store.demo || !store.token) return
   const token = store.token
-  const [a, r, p] = await Promise.all([
-    api.get('/api/alerts'),
-    api.get('/api/alert-rules'),
-    api.get('/api/alert-presets'),
+  const [a, r, p] = await Promise.allSettled([
+    api.get('/api/alerts'), api.get('/api/alert-rules'), api.get('/api/alert-presets'),
   ])
   if (token !== store.token || store.demo) return
-  events.value = rows(a.data)
-  rules.value = rows(r.data)
-  presets.value = p.data
-  loaded.value = true
+  if (a.status === 'fulfilled') {
+    events.value = rows(a.value.data)
+    loaded.value = true
+  }
+  if (r.status === 'fulfilled') rules.value = rows(r.value.data)
+  if (p.status === 'fulfilled') presets.value = p.value.data
+  const missing = [a, r, p].flatMap((result, i) => result.status === 'rejected' ? [['告警事件', '告警规则', '预设策略'][i]] : [])
+  if (missing.length) throw new Error(missing.join('、') + '未能更新')
+
 }
 async function run(fn: () => Promise<void>) {
   busy.value = true
@@ -91,10 +102,6 @@ async function run(fn: () => Promise<void>) {
 watch(selected, (key) => {
   threshold.value = presets.value.find((p) => p.key === key)?.threshold ?? 90
 })
-watch(
-  tab,
-  (value) => void router.replace({ query: { ...route.query, tab: value } }),
-)
 async function apply() {
   await run(async () => {
     const ids = all.value ? store.servers.map((s) => s.id) : targets.value
@@ -152,15 +159,35 @@ async function save() {
     tab.value = 'presets'
   })
 }
+let drawerVersion = 0
+const linkState = ref<'loading'|'ready'|'error'>('loading')
 async function open(r: any) {
+  const version = ++drawerVersion
+  linkState.value = 'loading'
   drawer.value = r
   incidentId.value = undefined
-  const list = rows((await api.get('/api/incidents')).data)
-  const linked = list.find((i) => i.source_alert_id === r.id)
-  if (linked) incidentId.value = Number(linked.id)
+  try {
+    const list = rows((await api.get('/api/incidents')).data)
+    if (drawer.value?.id !== r.id || version !== drawerVersion) return
+    const linked = list.find(i => Number(i.source_alert_id) === Number(r.id))
+    incidentId.value = linked ? Number(linked.id) : undefined
+    linkState.value = 'ready'
+  } catch {
+    if (version === drawerVersion) linkState.value = 'error'
+  }
+}
+watch([() => route.query.event, loaded], ([id, ready]) => {
+  if (!id) { drawer.value = null; return }
+  if (!ready) return
+  const event = events.value.find(e => String(e.id) === id)
+  if (event) void open(event)
+  else error.value = '告警不存在或当前账户无权查看'
+}, {immediate:true})
+function selectEvent(id?: number) {
+  void router.replace({query:{...route.query, event:id}})
 }
 const requestKeys = new Map<number, string>()
-async function analyze(retry = false) {
+async function analyze() {
   if (!drawer.value) return
   const id = drawer.value.id
   if (!requestKeys.has(id)) requestKeys.set(id, crypto.randomUUID())
@@ -169,11 +196,13 @@ async function analyze(retry = false) {
       `/api/alerts/${id}/investigation`,
       {},
       {
-        params: { retry },
         headers: { 'Idempotency-Key': requestKeys.get(id) },
       },
     )
-    incidentId.value = data.incidentId
+    if (drawer.value?.id === id) {
+      incidentId.value = data.incidentId
+      await router.push('/incidents/' + data.incidentId)
+    }
     requestKeys.delete(id)
   })
 }
@@ -186,7 +215,7 @@ async function ack(id: number) {
   })
 }
 const filtered = computed(() =>
-  events.value.filter((e) => !filter.value || e.status === filter.value),
+  events.value.filter(e => filter.value === 'UNRESOLVED' ? e.status !== 'RESOLVED' : !filter.value || e.status === filter.value),
 )
 onMounted(() => void run(load))
 useNotificationEvents(async () => { if (!busy.value) await run(load) })
@@ -202,7 +231,7 @@ const columns = [
 ]
 </script>
 <template>
-  <div class="operations-instruments">
+  <div v-if="tab === 'presets' || tab === 'custom'" class="operations-instruments">
     <ResourceGauge
       label="规则启用率"
       :value="
@@ -258,10 +287,11 @@ const columns = [
           v-model:value="filter"
           style="width: 180px"
           :options="[
+            { value: 'UNRESOLVED', label: '未恢复告警' },
             { value: '', label: '全部事件' },
             ...['FIRING', 'ACKNOWLEDGED', 'RESOLVED'].map((value) => ({
               value,
-              label: value,
+              label: statusLabels[value],
             })),
           ]"
         /><a-button :loading="busy" @click="() => run(load)">刷新事件</a-button>
@@ -273,7 +303,7 @@ const columns = [
         :scroll="{ x: 1000 }"
         ><template #bodyCell="{ column, record }"
           ><a-space v-if="column.key === 'action'"
-            ><a-button type="link" @click="() => run(() => open(record))"
+            ><a-button type="link" @click="selectEvent(record.id)"
               >查看详情</a-button
             ><a-button
               v-if="canManage && record.status === 'FIRING'"
@@ -297,7 +327,7 @@ const columns = [
                   ? 'orange'
                   : 'cyan'
             "
-            >{{ record.severity }}</a-tag
+            >{{ severityLabels[record.severity] || record.severity }}</a-tag
           ><a-tag
             v-else-if="column.dataIndex === 'status'"
             :color="
@@ -307,7 +337,7 @@ const columns = [
                   ? 'red'
                   : 'orange'
             "
-            >{{ record.status }}</a-tag
+            >{{ statusLabels[record.status] || record.status }}</a-tag
           ></template
         ></a-table
       ></a-tab-pane
@@ -481,9 +511,9 @@ const columns = [
       ><IncidentsView /></a-tab-pane></a-tabs
   ><a-drawer
     :open="!!drawer"
-    :width="1040"
+    width="min(640px, 100vw)"
     title="告警详情与故障调查"
-    @close="drawer = null"
+    @close="selectEvent()"
     ><template v-if="drawer"
       ><a-descriptions bordered :column="2"
         ><a-descriptions-item label="事件">#{{ drawer.id }}</a-descriptions-item
@@ -491,24 +521,19 @@ const columns = [
           drawer.server_id
         }}</a-descriptions-item
         ><a-descriptions-item label="状态">{{
-          drawer.status
+          statusLabels[drawer.status] || drawer.status
         }}</a-descriptions-item
         ><a-descriptions-item label="异常时间">{{
           formatTime(drawer.first_triggered_at)
         }}</a-descriptions-item></a-descriptions
       >
-      <h3>原始监控证据</h3>
-      <pre class="drawer-evidence">{{ drawer.evidence }}</pre>
-      <a-space style="margin: 16px 0"
-        ><a-button type="primary" :loading="busy" @click="analyze(false)"
-          >AI 故障分析 / 查看结果</a-button
-        ><a-button v-if="incidentId" :loading="busy" @click="analyze(true)"
-          >重新调查 / 失败重试</a-button
-        ></a-space
-      ><IncidentsView
-        v-if="incidentId"
-        :key="incidentId"
-        :incident-id="incidentId"
-        detail-only /></template
+      <a-space wrap style="margin: 16px 0">
+        <a-button v-if="linkState === 'error'" @click="open(drawer)">重试读取关联调查</a-button>
+        <a-button v-else-if="incidentId" type="primary" @click="router.push('/incidents/' + incidentId)">查看调查进度与报告</a-button>
+        <a-button v-else type="primary" :loading="busy || linkState === 'loading'" @click="analyze">开始 AI 调查</a-button>
+        <RouterLink :to="'/servers/' + drawer.server_id">查看告警主机</RouterLink>
+      </a-space>
+      <details><summary>原始监控证据</summary><pre class="drawer-evidence">{{ drawer.evidence }}</pre></details>
+    </template
   ></a-drawer>
 </template>

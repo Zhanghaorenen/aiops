@@ -99,6 +99,12 @@ export const router = createRouter({
       meta: { title: '告警中心', section: 'alerts' },
     },
     { path: '/personal', component: () => import('../views/PersonalView.vue'), meta: { title: '个人记录', section: 'personal' } },
+    {
+      path: '/incidents/:id(\\d+)',
+      component: () => import('../views/IncidentsView.vue'),
+      props: route => ({ incidentId: Number(route.params.id), detailOnly: true }),
+      meta: { title: '调查详情', section: 'alerts' },
+    },
     { path: '/incidents', redirect: '/alerts?tab=incidents' },
     {
       path: '/access',

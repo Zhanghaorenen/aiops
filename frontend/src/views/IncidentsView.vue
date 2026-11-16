@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { api, errorMessage } from '../api'
 import TraceViewer from '../components/TraceViewer.vue'
 import InvestigationReport from '../components/InvestigationReport.vue'
 import InvestigationPolicy from '../components/InvestigationPolicy.vue'
 import { useWorkspaceStore } from '../stores/workspace'
+const router = useRouter()
 const props = defineProps<{ incidentId?: number; detailOnly?: boolean }>()
 const store = useWorkspaceStore(),
   items = ref<any[]>([]),
@@ -57,7 +59,7 @@ const traceQuery = ref('')
 async function findTrace() {
   const current=epoch
   const {data}=await api.get(`/api/investigation-traces/${encodeURIComponent(traceQuery.value.trim())}`)
-  if(current===epoch) await open(data.incidentId)
+  if(current===epoch) await router.push('/incidents/' + data.incidentId)
 }
 const keys = new Map<number, string>()
 async function investigate() {
@@ -126,15 +128,17 @@ const columns = [
 </script>
 <template>
   <a-space direction="vertical" style="width: 100%" :size="16"
-    ><a-alert v-if="error" type="error" :message="error" /><a-card
+    ><RouterLink v-if="detailOnly" to="/alerts?tab=incidents">全部故障调查</RouterLink>
+    <a-spin v-if="detailOnly && busy && !detail" />
+    <a-alert v-if="error" type="error" :message="error" /><a-card
       v-if="!detailOnly"
       title="历史故障调查"
-      ><TraceViewer /><a-input-search v-model:value="traceQuery" placeholder="按调查 Trace ID 查找" @search="() => run(findTrace)" />
+      ><details class="trace-search"><summary>按 Trace ID 查找</summary><TraceViewer /><a-input-search v-model:value="traceQuery" placeholder="按调查 Trace ID 查找" @search="() => run(findTrace)" /></details>
       <a-table :columns="columns" :data-source="items" row-key="id"
         ><template #bodyCell="{ column, record }"
           ><a-button
             v-if="column.key === 'action'"
-            @click="() => run(() => open(record.id))"
+            @click="$router.push('/incidents/' + record.id)"
             >查看</a-button
           ></template
         ></a-table
@@ -151,7 +155,8 @@ const columns = [
             )
           "
           @click="investigate"
-          >AI 深度调查</a-button
+          >{{ detail.runs?.some((r:any) => ['PENDING','RUNNING'].includes(r.status)) ? '调查进行中' :
+            detail.runs?.[0]?.status === 'FAILED' ? '重试调查' : detail.runs?.length ? '重新调查' : '开始 AI 调查' }}</a-button
         ><a-select
           v-if="canManage"
           :value="detail.status"
@@ -200,7 +205,7 @@ const columns = [
           ></template
         ></a-card
       >
-      <InvestigationPolicy v-if="store.role==='ADMIN'" :server-id="detail.server_id" />
+      <details v-if="store.role==='ADMIN'"><summary>自动调查策略</summary><InvestigationPolicy :server-id="detail.server_id" /></details>
       <details>
         <summary>事件历史</summary>
         <p v-for="h in detail.history" :key="h.id">

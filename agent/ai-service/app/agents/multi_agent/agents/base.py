@@ -10,7 +10,7 @@ from langchain_core.tools import StructuredTool
 from ...graph_agent import GraphAgent,MAX_TOOL_RESULT_LENGTH
 from ...incident_graph import data_status
 from ..schemas import AgentResult,EvidenceItem,Finding
-from ..events import emit,writer
+from ..events import writer
 
 class ToolSet:
     def __init__(self,tools): self.tools=tools
@@ -91,7 +91,6 @@ class BaseAgent:
                 description=source.description,args_schema=source.args_schema)
         runner=DomainGraph(self.llm,ToolSet([instrument(t) for t in self.tools]),ToolSet([]),
             max_rounds=3,prompt=prompt,domain=self.name,max_tool_calls=task.tool_budget,deduplicate_calls=True)
-        emit("agent_start",agent=self.name,task_id=task.task_id)
         try:
             sink=writer()
             answer=await asyncio.wait_for(runner.answer_with_events(
@@ -113,6 +112,4 @@ class BaseAgent:
                 summary="专业调查未全部完成",evidence=evidence,tool_calls=calls,
                 elapsed_ms=round((time.monotonic()-started)*1000),error_code=type(exc).__name__,
                 limitations=["超时、依赖失败或执行预算不足"])
-        emit("agent_result",agent=self.name,status=result.status,tool_calls=result.tool_calls,
-            elapsed_ms=result.elapsed_ms)
         return result

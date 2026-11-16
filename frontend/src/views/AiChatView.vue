@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import AgentExecution from '../components/AgentExecution.vue'
 import TraceViewer from '../components/TraceViewer.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   RobotOutlined,
   UserOutlined,
   SendOutlined,
-  DeleteOutlined,
+  MoreOutlined,
   PlusOutlined,
   StopOutlined,
   ReloadOutlined,
@@ -19,7 +20,7 @@ import {
 } from '../composables/useAiChat'
 
 import ResourceResult from '../components/ResourceResult.vue'
-import { chatSessions, errorMessage, type AiSession } from '../api'
+import { aiApi, chatSessions, errorMessage, type AiSession, type SavedChatMessage } from '../api'
 const store = useWorkspaceStore()
 const sessions = ref<AiSession[]>([])
 const sessionId = ref<string | null>(null)
@@ -28,6 +29,7 @@ const oldestMessage = ref<number>()
 const hasOlder = ref(false)
 const renameTitle = ref('')
 const renaming = ref(false)
+const deleting = ref(false)
 let historyVersion = 0
 
 const {
@@ -39,6 +41,7 @@ const {
   pendingQuestion,
   streamingAnswer,
   toolActivity,
+  execution,
   canRetry,
   send: sendTurn,
   cancel,
@@ -49,6 +52,17 @@ const {
   sessionId: sessionId.value,
 }))
 const messageContainer = ref<HTMLElement | null>(null)
+const followLatest = ref(true)
+const historyOpen = ref(false)
+const composer = ref()
+function trackScroll() {
+  const el = messageContainer.value
+  if (el) followLatest.value = el.scrollHeight - el.scrollTop - el.clientHeight < 64
+}
+function suggest(question: string) {
+  input.value = question
+  composer.value?.focus()
+}
 const route = useRoute()
 watch(
   () => route?.query.question,
@@ -76,13 +90,14 @@ watch(
     pendingQuestion,
     streamingAnswer,
     toolActivity,
+    () => execution.value.length,
     error,
     notice,
   ],
   async () => {
     await nextTick()
     const element = messageContainer.value
-    if (element) element.scrollTop = element.scrollHeight
+    if (element && followLatest.value) element.scrollTop = element.scrollHeight
   },
   { flush: 'post' },
 )
@@ -146,7 +161,18 @@ async function loadSessions() {
     if (token === store.token) error.value = errorMessage(e)
   }
 }
+function restoreMessage(m: SavedChatMessage) {
+  let metadata
+  try { metadata = JSON.parse(m.metadata_json || '{}') } catch { /* Older messages can lack metadata. */ }
+  return {
+    role: m.role, content: m.content, traceId: metadata?.traceId,
+    sources: metadata?.sources, resourceResults: metadata?.resourceResults,
+    execution: Array.isArray(metadata?.execution) ? metadata.execution : [],
+  }
+}
 async function openSession(id: string) {
+  historyOpen.value = false
+  followLatest.value = true
   cancel()
   reset()
   sessionId.value = id
@@ -160,20 +186,7 @@ async function openSession(id: string) {
     hasOlder.value = rows.length === 100
     messages.value = rows
       .filter((m) => m.status === 'COMPLETED')
-      .map((m) => {
-        let traceId: string | undefined
-        let sources = [],
-          resourceResults = []
-        try {
-          const metadata = JSON.parse(m.metadata_json || '{}')
-          traceId=metadata.traceId
-          sources = metadata.sources || []
-          resourceResults = metadata.resourceResults || []
-        } catch {
-          /* 旧消息无引用 */
-        }
-        return { role: m.role, content: m.content, traceId, sources, resourceResults }
-      })
+      .map(restoreMessage)
   } catch (e) {
     if (version === historyVersion && token === store.token)
       error.value = errorMessage(e)
@@ -194,14 +207,15 @@ async function loadOlder() {
     messages.value.unshift(
       ...rows
         .filter((m) => m.status === 'COMPLETED')
-        .map((m) => ({ role: m.role, content: m.content })),
+        .map(restoreMessage),
     )
   } catch (e) {
     if (version === historyVersion) error.value = errorMessage(e)
   }
 }
 async function send(retry = false) {
-  if (loadingHistory.value || sending.value) return
+  if (loadingHistory.value || sending.value || unavailable.value || invalid.value || !inputLength.value) return
+  followLatest.value = true
   const token = store.token,
     version = historyVersion
   try {
@@ -240,11 +254,27 @@ async function deleteSession() {
   if (!sessionId.value) return
   try {
     await chatSessions.remove(sessionId.value)
+    deleting.value = false
     reset()
     sessionId.value = null
     await loadSessions()
   } catch (e) {
     error.value = errorMessage(e)
+  }
+}
+async function downloadSource(source: {knowledge_base_id:number; document_id:number; document_title:string}) {
+  const token = store.token
+  try {
+    const {data} = await aiApi.get(`/api/rag/knowledge-bases/${source.knowledge_base_id}/documents/${source.document_id}/download`, {responseType:'blob'})
+    if (!token || token !== store.token) return
+    const url = URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = source.document_title
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (e) {
+    if (token === store.token) error.value = errorMessage(e)
   }
 }
 onMounted(loadSessions)
@@ -253,9 +283,13 @@ onMounted(loadSessions)
 <template>
   <div class="chat-layout">
     <aside class="session-sidebar">
-      <a-button block :disabled="unavailable" @click="requestReset('new')"
-        >新建会话</a-button
-      >
+      <div class="session-heading">
+        <strong class="desktop-title">历史会话</strong>
+        <button class="history-toggle" :aria-expanded="historyOpen" @click="historyOpen = !historyOpen">历史会话 {{ historyOpen ? '▴' : '▾' }}</button>
+        <a-button size="small" :disabled="unavailable" @click="requestReset('new')"><PlusOutlined /> 新建</a-button>
+      </div>
+      <nav aria-label="历史会话" :class="{ expanded: historyOpen }">
+      <p v-if="!sessions.length" class="empty-history">暂无历史会话</p>
       <button
         v-for="session in sessions"
         :key="session.id"
@@ -265,34 +299,22 @@ onMounted(loadSessions)
       >
         {{ session.title }}
       </button>
+      </nav>
     </aside>
     <section class="chat-panel" aria-label="AI 对话">
       <header class="chat-header">
         <div class="chat-heading">
-          <RobotOutlined /><strong>AI 助手</strong>
+          <RobotOutlined /><strong>{{ sessions.find(s => s.id === sessionId)?.title || 'AI 运维助手' }}</strong>
         </div>
-        <a-space>
-          <a-button v-if="sessionId" :disabled="sending" @click="beginRename"
-            >重命名</a-button
-          >
-          <a-popconfirm
-            v-if="sessionId"
-            title="删除此会话？"
-            @confirm="deleteSession"
-            ><a-button danger :disabled="sending">删除</a-button></a-popconfirm
-          >
-          <a-tooltip title="新建会话"
-            ><a-button aria-label="新建会话" @click="requestReset('new')"
-              ><template #icon><PlusOutlined /></template></a-button
-          ></a-tooltip>
-          <a-tooltip title="清空对话"
-            ><a-button
-              aria-label="清空对话"
-              :disabled="!messages.length && !input && !pendingQuestion"
-              @click="requestReset('clear')"
-              ><template #icon><DeleteOutlined /></template></a-button
-          ></a-tooltip>
-        </a-space>
+        <a-dropdown v-if="sessionId" :trigger="['click']" :disabled="sending">
+          <a-button type="text" aria-label="会话操作"><MoreOutlined /></a-button>
+          <template #overlay>
+            <a-menu>
+              <a-menu-item @click="beginRename">重命名会话</a-menu-item>
+              <a-menu-item danger @click="deleting = true">删除会话</a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
       </header>
       <a-alert
         v-if="unavailable"
@@ -308,15 +330,20 @@ onMounted(loadSessions)
       <div
         ref="messageContainer"
         class="chat-messages"
+        @scroll.passive="trackScroll"
         role="log"
         aria-label="对话记录"
         aria-live="polite"
-        :aria-busy="sending"
+
       >
         <a-button v-if="hasOlder" @click="loadOlder">加载更早消息</a-button>
         <div v-if="!messages.length && !pendingQuestion" class="chat-welcome">
           <RobotOutlined />
           <h2>有什么需要检查？</h2>
+          <a-space wrap>
+            <a-button v-for="q in ['查看在线服务器', '检查 GPU 负载', '分析训练任务资源竞争']" :key="q"
+              :disabled="unavailable" @click="suggest(q)">{{ q }}</a-button>
+          </a-space>
         </div>
         <article
           v-for="(item, index) in messages"
@@ -329,7 +356,8 @@ onMounted(loadSessions)
             <UserOutlined v-if="item.role === 'user'" /><RobotOutlined v-else />
           </div>
           <div class="chat-bubble">
-            {{ item.content }}
+            <div>{{ item.content }}</div>
+            <AgentExecution v-if="item.execution?.length" :steps="item.execution" state="complete" />
             <ResourceResult
               v-for="(result, i) in item.resourceResults"
               :key="i"
@@ -345,6 +373,7 @@ onMounted(loadSessions)
                 {{ source.page ? `第 ${source.page} 页` : '无页码' }} ·
                 {{ source.section || '无章节' }}
                 <p>{{ source.content }}</p>
+                <a-button size="small" @click="downloadSource(source)">下载引用原文</a-button>
               </div>
             </details>
           </div>
@@ -358,21 +387,22 @@ onMounted(loadSessions)
           <div class="chat-bubble">{{ pendingQuestion }}</div>
         </article>
         <article
-          v-if="sending"
+          v-if="sending || (pendingQuestion && execution.length)"
           class="chat-message assistant"
-          aria-label="AI 正在回复"
+          :aria-label="sending ? 'AI 正在回复' : '查询已中断'"
         >
           <div class="chat-avatar"><RobotOutlined /></div>
           <div class="chat-bubble loading-bubble">
-            <a-spin v-if="!streamingAnswer" size="small" />
-            <span v-if="toolActivity" class="tool-activity" role="status">{{
+            <AgentExecution v-if="execution.length" :steps="execution" :state="sending ? 'live' : 'interrupted'" />
+            <a-spin v-if="sending && !execution.length && !streamingAnswer" size="small" />
+            <span v-if="toolActivity && !execution.length" class="tool-activity" role="status">{{
               toolActivity
             }}</span>
             <span v-if="streamingAnswer"
               >{{ streamingAnswer
               }}<span class="stream-cursor" aria-hidden="true">▍</span></span
             >
-            <span v-else-if="!toolActivity">正在连接智能体…</span>
+            <span v-else-if="sending && !toolActivity && !execution.length">正在连接智能体…</span>
           </div>
         </article>
       </div>
@@ -396,8 +426,9 @@ onMounted(loadSessions)
       />
       <div class="chat-composer">
         <a-textarea
+          ref="composer"
           v-model:value="input"
-          :rows="3"
+          :auto-size="{ minRows: 2, maxRows: 5 }"
           :disabled="sending || unavailable"
           :status="invalid ? 'error' : undefined"
           placeholder="输入运维问题"
@@ -434,6 +465,7 @@ onMounted(loadSessions)
       </div>
     </section>
   </div>
+  <a-modal v-model:open="deleting" title="删除此会话？" ok-text="删除" cancel-text="保留" @ok="deleteSession">删除后无法恢复此会话。</a-modal>
   <a-modal v-model:open="renaming" title="重命名会话" @ok="renameSession"
     ><a-input v-model:value="renameTitle" :maxlength="160"
   /></a-modal>
@@ -464,6 +496,12 @@ onMounted(loadSessions)
   max-height: 760px;
   overflow-y: auto;
 }
+.session-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.history-toggle { display: none; background: transparent; border: 0; color: inherit; cursor: pointer; }
+.empty-history { color: var(--muted); margin-top: 14px; }
+.chat-heading { flex: 1; min-width: 0; }
+.chat-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-bubble > details { margin-top: 6px; }
 .session-item {
   display: block;
   width: 100%;
@@ -484,6 +522,8 @@ onMounted(loadSessions)
   color: #27cce3;
 }
 @media (max-width: 760px) {
+  .desktop-title, .session-sidebar nav:not(.expanded) { display: none; }
+  .history-toggle { display: inline-block; }
   .chat-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -584,9 +624,10 @@ onMounted(loadSessions)
 }
 .loading-bubble {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #647783;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  color: inherit;
 }
 .tool-activity {
   color: #27cce3;
