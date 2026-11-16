@@ -46,6 +46,9 @@ MAX_TOOL_RESULT_LENGTH = 16000
 MAX_ANSWER_LENGTH = 8000
 
 
+from ..telemetry import graph_config
+
+
 class GraphState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     tool_rounds: int
@@ -117,7 +120,9 @@ class GraphAgent:
                     raise ValueError("工具参数字段不匹配")
                 validated = (source.args_schema.model_validate(arguments, strict=True)
                              if source.args_schema else None)
-                result = await source.ainvoke(validated.model_dump() if validated else {})
+                from ..telemetry import span
+                with span(source.name, 'tool'):
+                    result = await source.ainvoke(validated.model_dump() if validated else {})
                 if source.name in {'estimate_available_capacity', 'predict_workload_completion', 'get_workload_profile', 'search_similar_incidents', 'analyze_active_workload'}:
                     writer({'type': 'resource_result', 'name': source.name, 'data': result})
                 if source.name == 'search_knowledge':
@@ -168,9 +173,10 @@ class GraphAgent:
 
     def _build_graph(self):
         builder = StateGraph(GraphState)
-        builder.add_node("memory", self._memory_node)
-        builder.add_node("assistant", self._assistant_node)
-        builder.add_node("tools", self._batched_tools_node)
+        from ..telemetry import traced
+        builder.add_node("memory", traced("graph.memory")(self._memory_node))
+        builder.add_node("assistant", traced("graph.assistant")(self._assistant_node))
+        builder.add_node("tools", traced("graph.execute_tools")(self._batched_tools_node))
         builder.add_edge(START, "memory")
         builder.add_edge("memory", "assistant")
         builder.add_conditional_edges("assistant", self._route_after_assistant,
@@ -356,7 +362,7 @@ class GraphAgent:
         try:
             result = await self.graph.ainvoke(
                 state,
-                config={"recursion_limit": self.max_rounds * 2 + 4},
+                config=graph_config("GraphAgent",{"recursion_limit": self.max_rounds * 2 + 4}),
             )
         except GraphRecursionError as exc:
             raise ToolRoundLimitError("已达到最大工具调用轮数，请缩小问题范围") from exc
@@ -372,7 +378,7 @@ class GraphAgent:
         try:
             async for event in self.graph.astream(
                     state,
-                    config={"recursion_limit": self.max_rounds * 2 + 4},
+                    config=graph_config("GraphAgent",{"recursion_limit": self.max_rounds * 2 + 4}),
                     stream_mode="custom"):
                 yield event
         except GraphRecursionError as exc:

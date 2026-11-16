@@ -185,12 +185,13 @@ public class IncidentService {
             id);
     if (active > 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "该事件已有调查任务，请等待完成");
     jdbc.update(
-        "INSERT INTO ops_investigation_run(incident_id,requested_by,request_key,status,created_at)"
-            + " VALUES(?,?,?,'PENDING',?)",
+        "INSERT INTO ops_investigation_run(incident_id,requested_by,request_key,status,created_at,trace_parent)"
+            + " VALUES(?,?,?,'PENDING',?,?)",
         id,
         user,
         requestKey,
-        now());
+        now(), InvestigationTrace.parent());
+    if(InvestigationTrace.parent()!=null) io.opentelemetry.api.trace.Span.current().addEvent("investigation.queued");
     history(id, "INVESTIGATION_REQUESTED", requestKey);
     return jdbc.queryForMap(
         "SELECT * FROM ops_investigation_run WHERE incident_id=? AND requested_by=? AND"
@@ -198,6 +199,15 @@ public class IncidentService {
         id,
         user,
         requestKey);
+  }
+
+  public Map<String,Object> trace(String traceId) {
+    if(!traceId.matches("[a-f0-9]{32}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+    var rows=jdbc.queryForList("SELECT incident_id FROM ops_investigation_run WHERE requested_by=? AND (result_trace_id=? OR trace_parent LIKE ?)",access.currentUser().getId(),traceId,"00-"+traceId+"-%");
+    if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+    long incident=((Number)rows.get(0).get("incident_id")).longValue();
+    get(incident);
+    return Map.of("incidentId",incident);
   }
 
   public Map<String, Object> detail(Long id) {
@@ -215,7 +225,7 @@ public class IncidentService {
     result.put(
         "runs",
         jdbc.queryForList(
-            "SELECT id,incident_id,requested_by,status,created_at,started_at,finished_at,error_code,progress_json"
+            "SELECT id,incident_id,requested_by,status,created_at,started_at,finished_at,error_code,progress_json,recovery_attempts"
                 + " FROM ops_investigation_run WHERE incident_id=? AND requested_by=? ORDER BY id DESC",
             id,access.currentUser().getId()));
     result.put(

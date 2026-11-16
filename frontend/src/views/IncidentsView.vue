@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api, errorMessage } from '../api'
+import TraceViewer from '../components/TraceViewer.vue'
 import InvestigationReport from '../components/InvestigationReport.vue'
 import InvestigationPolicy from '../components/InvestigationPolicy.vue'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -52,6 +53,12 @@ async function open(id: number) {
 const stateLabel:Record<string,string>={PENDING:'排队',RUNNING:'调查中',SUCCEEDED:'成功',FAILED:'失败'}
 const checkLabel:Record<string,string>={host:'主机指标',gpu:'显卡状态',host_history:'主机历史',gpu_history:'显卡历史',runtime_contention:'资源压力',gpu_processes:'计算进程',workloads:'活跃任务',workload_analysis:'任务资源',training_analysis:'训练性能',knowledge:'知识库',historical_cases:'历史故障经验',status:'在线状态'}
 function progress(raw:string) { try { return JSON.parse(raw??'{}') } catch { return {} } }
+const traceQuery = ref('')
+async function findTrace() {
+  const current=epoch
+  const {data}=await api.get(`/api/investigation-traces/${encodeURIComponent(traceQuery.value.trim())}`)
+  if(current===epoch) await open(data.incidentId)
+}
 const keys = new Map<number, string>()
 async function investigate() {
   const id = detail.value.id
@@ -122,7 +129,8 @@ const columns = [
     ><a-alert v-if="error" type="error" :message="error" /><a-card
       v-if="!detailOnly"
       title="历史故障调查"
-      ><a-table :columns="columns" :data-source="items" row-key="id"
+      ><TraceViewer /><a-input-search v-model:value="traceQuery" placeholder="按调查 Trace ID 查找" @search="() => run(findTrace)" />
+      <a-table :columns="columns" :data-source="items" row-key="id"
         ><template #bodyCell="{ column, record }"
           ><a-button
             v-if="column.key === 'action'"
@@ -159,6 +167,7 @@ const columns = [
         ><template #renderItem="{ item }"
           ><a-list-item
             ><div>调查 #{{ item.id }} · {{ stateLabel[item.status]??'状态待更新' }}
+              <p v-if="item.recovery_attempts">租约中断后已重新领取 {{ item.recovery_attempts }} 次</p>
               <p v-if="item.status==='FAILED'">调查未完成，可能因超时、权限变化或依赖故障。可以重新发起。</p>
               <p v-if="item.progress_json">{{ progress(item.progress_json).stage }} · 已完成 {{ progress(item.progress_json).toolCalls??0 }} 次检查</p>
               <a-space wrap><a-tag v-for="(c,i) in progress(item.progress_json).checks??[]" :key="i">{{ checkLabel[c.tool]??'监控检查' }} · {{ c.status==='FRESH'?'已取得新鲜数据':c.status==='UNAVAILABLE'?'暂不可用':c.status==='FORBIDDEN'?'权限受限':'已记录' }}</a-tag></a-space>

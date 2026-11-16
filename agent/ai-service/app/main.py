@@ -32,7 +32,9 @@ def create_app(settings: Settings | None = None, platform_factory=PlatformClient
     import os
     origin = os.getenv("AIOPS_WEB_ALLOWED_ORIGIN", "http://localhost:5173")
     application.add_middleware(CORSMiddleware, allow_origins=[origin], allow_methods=["GET", "POST", "DELETE"],
-                               allow_headers=["Authorization", "Content-Type"], expose_headers=["Retry-After"])
+                               allow_headers=["Authorization", "Content-Type"], expose_headers=["Retry-After", "X-Trace-ID"])
+    from .telemetry import TraceMiddleware
+    application.add_middleware(TraceMiddleware)
     application.include_router(chat_router)
     from .api.chat_memory import router as chat_memory_router
     application.include_router(chat_memory_router)

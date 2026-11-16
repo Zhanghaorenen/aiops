@@ -16,6 +16,7 @@ from ..rag.incident_memory import IncidentMemorySearch
 from ..agents.diagnosis_agent import ToolRoundLimitError
 from ..client.platform_client import PlatformProtocolError
 from ..config import Settings
+from ..telemetry import identify, current
 from ..llm.client import ModelResponseError
 from ..schemas.chat import ChatRequest, ChatResponse
 from ..tools.server_manager import ServerManager
@@ -79,6 +80,7 @@ async def chat(payload: ChatRequest, request: Request,
         stack.push_async_callback(platform.close)
         try:
             user = await platform.get_current_user()
+            identify(userId=user.get('id'), threadId=payload.session_id)
             await get_limiter(request, settings).check(user)
             try:
                 settings.require_llm()
@@ -132,6 +134,7 @@ async def chat_stream(payload: ChatRequest, request: Request,
     preflight = request.app.state.platform_factory(settings.backend_url, credentials.credentials, settings.backend_timeout)
     try:
         user = await preflight.get_current_user()
+        identify(userId=user.get('id'), threadId=payload.session_id)
         await get_limiter(request, settings).check(user)
     except httpx.HTTPStatusError as exc:
         raise HTTPException(exc.response.status_code, '用户凭证无效或无权访问') from exc
@@ -181,7 +184,7 @@ async def chat_stream(payload: ChatRequest, request: Request,
                                     answer = event.get('text', answer)
                                 yield _sse(event)
                         await turn.complete(answer, sources, resource_results)
-                    yield _sse({"type": "done"})
+                    yield _sse({"type": "done", **({'trace_id': current().trace_id} if current() else {})})
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 message = ("用户登录凭证无效或已过期" if status == 401 else

@@ -4,7 +4,8 @@ from .state import SupervisorState
 def build(supervisor):
     graph=StateGraph(SupervisorState)
     for name in ("plan","clarification","execute_agents","merge_results","synthesize","validate","finalize"):
-        graph.add_node(name,getattr(supervisor,name))
+        from ...telemetry import traced
+        graph.add_node(name,traced('supervisor.'+name)(getattr(supervisor,name)))
     graph.add_edge(START,"plan")
     graph.add_conditional_edges("plan",lambda s:"clarification" if s["plan"].clarification else "execute_agents")
     graph.add_edge("clarification",END)

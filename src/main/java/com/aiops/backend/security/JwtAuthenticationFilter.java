@@ -45,6 +45,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     chain.doFilter(request, response);
                     return;
                 }
+                if (Boolean.parseBoolean(System.getenv("OTEL_ENABLED"))) {
+                    var span=io.opentelemetry.api.trace.Span.current();
+                    span.setAttribute("aiops.userId",claims.get("uid",Long.class));
+                    for(String key: java.util.List.of("incidentId","taskId","runId","threadId")) {
+                        String value=request.getHeader("X-AIOps-"+key);
+                        // Diagnostic correlation only; authorization still uses the verified principal.
+                        if(value!=null && value.matches("[0-9a-fA-F-]{1,36}")) span.setAttribute("aiops."+key,value);
+                    }
+                }
                 var auth = new UsernamePasswordAuthenticationToken(claims.getSubject(), null,
                         AuthorityUtils.createAuthorityList("ROLE_USER"));
                 SecurityContextHolder.getContext().setAuthentication(auth);

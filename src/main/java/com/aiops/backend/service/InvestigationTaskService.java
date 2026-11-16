@@ -10,7 +10,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 数据库租约使重启后的任务可被标记失败；不把用户 JWT 持久化到任务表。 */
+/** 数据库行锁与每次领取的新租约保护调查的恢复和提交。 */
 @Service
 public class InvestigationTaskService {
   private final JdbcTemplate jdbc;
@@ -24,38 +24,41 @@ public class InvestigationTaskService {
     this.access = access;
   }
 
+  @org.springframework.beans.factory.annotation.Value("${aiops.checkpoint.enabled:false}")
+  private boolean recoveryEnabled;
+
   private LocalDateTime now() {
     return LocalDateTime.now(ZoneOffset.UTC);
   }
 
-  @Transactional
+  @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
   public Map<String, Object> claim() {
-    jdbc.update(
-        "UPDATE ops_investigation_run SET"
-            + " status='FAILED',error_code='WORKER_LEASE_EXPIRED',finished_at=? WHERE"
-            + " status='RUNNING' AND lease_until<?",
-        now(),
-        now());
-    var rows =
-        jdbc.queryForList(
-            "SELECT id FROM ops_investigation_run WHERE status='PENDING' ORDER BY id LIMIT 1");
-    if (rows.isEmpty()) return null;
-    long id = ((Number) rows.get(0).get("id")).longValue();
-    String lease = UUID.randomUUID().toString();
-    if (jdbc.update(
-            "UPDATE ops_investigation_run SET"
-                + " status='RUNNING',started_at=?,lease_until=?,lease_token=? WHERE id=? AND"
-                + " status='PENDING'",
-            now(),
-            now().plusMinutes(4),
-            lease,
-            id)
-        != 1) return null;
+    // Lock just one eligible run. Updating the entire expired range can deadlock with
+    // another worker moving a pending row into the RUNNING index range in InnoDB.
+    var at=now();
+    var rows=jdbc.queryForList(
+        "SELECT id,status,recovery_attempts FROM ops_investigation_run WHERE status='PENDING' OR (status='RUNNING' AND lease_until<?) ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED",at);
+    if(rows.isEmpty()) return null;
+    var row=rows.get(0);
+    long id=((Number)row.get("id")).longValue();
+    boolean expired="RUNNING".equals(row.get("status"));
+    int attempts=((Number)row.get("recovery_attempts")).intValue();
+    if(expired && (!recoveryEnabled || attempts>=3)) {
+      jdbc.update("UPDATE ops_investigation_run SET status='FAILED',error_code='WORKER_LEASE_EXPIRED',finished_at=? WHERE id=?",at,id);
+      return null;
+    }
+    jdbc.update("UPDATE ops_investigation_run SET status='RUNNING',started_at=COALESCE(started_at,?),lease_until=?,lease_token=?,recovery_attempts=? WHERE id=?",
+        at,at.plusMinutes(4),UUID.randomUUID().toString(),attempts+(expired?1:0),id);
     return jdbc.queryForMap(
         "SELECT r.*,i.server_id,i.title,i.description,i.source_run_id,u.username,u.status AS user_status FROM"
             + " ops_investigation_run r JOIN ops_incident i ON i.id=r.incident_id JOIN sys_user u"
             + " ON u.id=r.requested_by WHERE r.id=?",
         id);
+  }
+
+  public boolean recoverAfterDisconnect(Map<String,Object> run) {
+    // Let the current lease expire: the interrupted Python request may still be running.
+    return recoveryEnabled && ((Number)run.get("recovery_attempts")).intValue()<3;
   }
 
   public List<Map<String, Object>> alertContext(Long incidentId) {
@@ -83,8 +86,8 @@ public class InvestigationTaskService {
   }
 
   public void progress(long id, String lease, String payload) {
-    jdbc.update("UPDATE ops_investigation_run SET progress_json=? WHERE id=? AND requested_by=? AND lease_token=? AND status='RUNNING' AND lease_until>?",
-        payload,id,access.currentUser().getId(),lease,now());
+    if(jdbc.update("UPDATE ops_investigation_run SET progress_json=? WHERE id=? AND requested_by=? AND lease_token=? AND status='RUNNING' AND lease_until>?",
+        payload,id,access.currentUser().getId(),lease,now())!=1 && recoveryEnabled) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT);
   }
 
   public void authorized(Map<String, Object> run, Runnable action) {
@@ -132,7 +135,11 @@ public class InvestigationTaskService {
           report,
           now());
     }
-    if (error == null) authorized(run, () -> memories.fromReport(run, report));
+    if (error == null) {
+      authorized(run, () -> memories.fromReport(run, report));
+      var trace = new tools.jackson.databind.ObjectMapper().readTree(report).path("executionTrace").path("traceId").asText("");
+      if(trace.matches("[a-f0-9]{32}")) jdbc.update("UPDATE ops_investigation_run SET result_trace_id=? WHERE id=?",trace,id);
+    }
     jdbc.update(
         "UPDATE ops_investigation_run SET status=?,finished_at=?,error_code=? WHERE id=?",
         error == null ? "SUCCEEDED" : "FAILED",

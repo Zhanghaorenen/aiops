@@ -57,6 +57,7 @@ export function useAiChat(
   const input = ref('')
   const messages = ref<
     (ChatHistoryMessage & {
+      traceId?: string
       sources?: RagSearchResult[]
       resourceResults?: { name: string; data: Record<string, any> }[]
     })[]
@@ -139,12 +140,15 @@ export function useAiChat(
     streamingAnswer.value = ''
     toolActivity.value = ''
     input.value = ''
+    let traceId: string | undefined
     const sources: RagSearchResult[] = []
     resourceResults.value = []
     try {
       const response = await transport(request, controller.signal, (event) => {
         if (active !== controller || controller.signal.aborted) return
-        if (event.type === 'resource_result') {
+        if (event.type === 'done') {
+          traceId=event.trace_id
+        } else if (event.type === 'resource_result') {
           resourceResults.value.push({ name: event.name, data: event.data })
         } else if (event.type === 'sources') {
           for (const hit of event.results)
@@ -197,6 +201,7 @@ export function useAiChat(
         {
           role: 'assistant',
           content: response.answer,
+          ...(traceId ? {traceId} : {}),
           sources,
           resourceResults: [...resourceResults.value],
         },

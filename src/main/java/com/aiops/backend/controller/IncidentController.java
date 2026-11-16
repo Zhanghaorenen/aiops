@@ -29,6 +29,9 @@ public class IncidentController {
     return service.fromWorkload(serverId,runId.toString(),key);
   }
 
+  @GetMapping("/investigation-traces/{traceId}")
+  public Object trace(@PathVariable String traceId) { return service.trace(traceId); }
+
   @GetMapping("/incidents")
   public List<Map<String, Object>> list() {
     return service.list();

@@ -613,3 +613,19 @@ test('AI task analysis handoff contains resource identity without private proces
   assert.doesNotMatch(question,/private|secret/)
   assert.match(workloadQuestion(2,{pid:123,snapshotId:4}),/快照 ID 4/)
 })
+
+test('trace timelines render the recorded steps, latency and provider usage', async () => {
+  const Viewer=(await vite.ssrLoadModule('/src/components/TraceViewer.vue')).default
+  const id='a'.repeat(32)
+  const pinia=createPinia()
+  setActivePinia(pinia)
+  const app=createSSRApp({...Viewer,setup(props,context) {
+    const state=Viewer.setup(props,context)
+    state.timelines.value=[{executionId:'test-execution',startedAt:1,durationMs:92,spans:[
+      {name:'llm.chat',type:'generation',model:'fixture-model',startMs:2,durationMs:71,status:'OK',inputTokens:11,outputTokens:7}
+    ]}]
+    return state
+  }},{traceId:id}).use(pinia)
+  const html=await renderToString(app)
+  for(const value of [id,'llm.chat','71 ms','fixture-model','11','7 tokens']) assert.ok(html.includes(value))
+})

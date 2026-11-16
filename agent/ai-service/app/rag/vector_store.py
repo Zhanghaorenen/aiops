@@ -18,6 +18,9 @@ class VectorStore:
         self.client = client or QdrantClient(url=url, api_key=key or None, timeout=60, check_compatibility=False)
         self._vectorstore = None
         self._lock = RLock()
+        from .hybrid import LexicalIndex, LocalReranker
+        self.lexical = LexicalIndex(self.client,self.collection)
+        self.reranker = LocalReranker()
 
     def _store(self):
         with self._lock:
@@ -61,7 +64,13 @@ class VectorStore:
             }))
             ids.append(str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id)))
         await store.aadd_documents(documents=docs, ids=ids, batch_size=64)
+        from ..telemetry import enabled
+        if enabled('AIOPS_HYBRID_ENABLED'):
+            await asyncio.to_thread(self.lexical.put,ids,docs)
 
+    from ..telemetry import traced
+
+    @traced('qdrant.search','retriever')
     async def search(self, query, allowed, top_k, document_versions):
         if not allowed or not document_versions: return []
         store = await asyncio.to_thread(self._store)
@@ -71,8 +80,25 @@ class VectorStore:
             models.FieldCondition(key='metadata.document_id',match=models.MatchValue(value=doc)),
             models.FieldCondition(key='metadata.index_version',match=models.MatchValue(value=index)),
         ]) for kb, doc, index in document_versions]))
-        hits = await store.asimilarity_search_with_score(query=query, k=top_k, filter=filters)
-        return [{**doc.metadata, 'content': doc.page_content, 'score': score} for doc, score in hits]
+        from ..telemetry import enabled, span
+        from .hybrid import fuse, log
+        hybrid = enabled("AIOPS_HYBRID_ENABLED")
+        hits = await store.asimilarity_search_with_score(query=query,k=20 if hybrid else top_k,filter=filters)
+        dense = [{**doc.metadata, "content":doc.page_content, "score":score} for doc,score in hits]
+        if not hybrid:
+            return dense
+        try:
+            with span("qdrant.bm25","retriever"):
+                sparse = await asyncio.to_thread(self.lexical.search,query,filters,20)
+        except Exception as exc:
+            log.warning("BM25 unavailable: %s",type(exc).__name__)
+            return [{**hit,"dense_rank":i,"dense_score":hit["score"],"retrieval_source":["dense"]}
+                    for i,hit in enumerate(dense[:top_k],1)]
+        candidates = fuse(dense,sparse)[:20]
+        if enabled("AIOPS_RERANKER_ENABLED"):
+            with span("rag.rerank","retriever"):
+                candidates = await asyncio.to_thread(self.reranker.rank,query,candidates)
+        return [{**hit,"final_rank":i} for i,hit in enumerate(candidates[:top_k],1)]
 
     def as_retriever(self, allowed, document_versions, top_k=5):
         # Internal adapter: caller must obtain scope from Java; never bind a user JWT here.
@@ -90,6 +116,7 @@ class VectorStore:
         suffix = '_' + hashlib.sha256(self.version.encode()).hexdigest()[:24]
         names = [c.name for c in self.client.get_collections().collections]
         targets = [(name, 'metadata.') for name in names if name.startswith('aiops_s') and name.endswith(suffix)]
+        targets.extend((n,'metadata.') for n in names if n.startswith('aiops_s') and n.endswith(suffix+'_bm25_v1'))
         targets.append((self.legacy_collection, ''))
         for collection, prefix in targets:
             if self.client.collection_exists(collection):

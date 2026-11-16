@@ -235,7 +235,7 @@ export type ChatStreamEvent =
   | { type: 'tool_start' | 'tool_end'; name: string; ok?: boolean }
   | { type: 'sources'; results: RagSearchResult[] }
   | { type: 'resource_result'; name: string; data: Record<string, any> }
-  | { type: 'done' }
+  | { type: 'done'; trace_id?: string }
   | { type: 'error'; status?: number; message: string }
 
 // 调用中心 AI Service
@@ -338,7 +338,7 @@ export async function sendChatStream(
 
 export interface KnowledgeBase {id:number;name:string;description:string|null;status:string}
 export interface KnowledgeDocument {id:number;kbId:number;originalFilename:string;mimeType:string;status:string;chunkCount:number|null;createdAt:string;errorCode:string|null}
-export interface RagSearchResult {chunk_id:string;document_id:number;knowledge_base_id:number;document_title:string;page:number|null;section:string|null;content:string;score:number}
+export interface RagSearchResult {chunk_id:string;document_id:number;knowledge_base_id:number;document_title:string;page:number|null;section:string|null;content:string;score:number;retrieval_source?:string[];dense_rank?:number;sparse_rank?:number;rrf_rank?:number;rerank_score?:number;final_rank?:number}
 
 export interface AiSession { id: string; title: string; status: string; updated_at: string }
 export interface SavedChatMessage extends ChatHistoryMessage { id: number; status: string; metadata_json?: string }

@@ -357,6 +357,7 @@ const columns = [
             {{ hit.section ?? '无章节' }} · {{ hit.chunk_id }} · 相似度
             {{ hit.score.toFixed(3) }}
           </p>
+          <details v-if="hit.retrieval_source"><summary>检索详情</summary>{{ hit.retrieval_source.join(' + ') }} · Dense #{{ hit.dense_rank ?? '—' }} · BM25 #{{ hit.sparse_rank ?? '—' }} · RRF #{{ hit.rrf_rank ?? '—' }} · 重排分 {{ hit.rerank_score ?? '—' }} · 最终 #{{ hit.final_rank ?? '—' }}</details>
           <p style="white-space: pre-wrap; margin-top: 10px">
             {{ hit.content }}
           </p></a-card

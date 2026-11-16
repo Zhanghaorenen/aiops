@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TraceViewer from '../components/TraceViewer.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   RobotOutlined,
@@ -160,16 +161,18 @@ async function openSession(id: string) {
     messages.value = rows
       .filter((m) => m.status === 'COMPLETED')
       .map((m) => {
+        let traceId: string | undefined
         let sources = [],
           resourceResults = []
         try {
           const metadata = JSON.parse(m.metadata_json || '{}')
+          traceId=metadata.traceId
           sources = metadata.sources || []
           resourceResults = metadata.resourceResults || []
         } catch {
           /* 旧消息无引用 */
         }
-        return { role: m.role, content: m.content, sources, resourceResults }
+        return { role: m.role, content: m.content, traceId, sources, resourceResults }
       })
   } catch (e) {
     if (version === historyVersion && token === store.token)
@@ -333,6 +336,7 @@ onMounted(loadSessions)
               :name="result.name"
               :data="result.data"
             />
+            <TraceViewer v-if="item.traceId" :trace-id="item.traceId" />
             <details v-if="item.sources?.length">
               <summary>检索来源（{{ item.sources.length }}）</summary>
               <div v-for="source in item.sources" :key="source.chunk_id">

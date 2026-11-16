@@ -41,7 +41,8 @@ public class InvestigationWorker {
   public void poll() {
     Map<String, Object> run = tasks.claim();
     if (run == null) return;
-    try {
+    var span = InvestigationTrace.claimed(run);
+    try (var scope = span.makeCurrent()) {
       if (key.length() < 32) throw new IllegalStateException("AI_SERVICE_NOT_CONFIGURED");
       tasks.authorized(run, () -> {});
       String token =
@@ -65,9 +66,11 @@ public class InvestigationWorker {
               .header("Content-Type", "application/json")
               .header("Authorization", "Bearer " + token)
               .header("X-AI-Service-Key", key)
-              .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(payload)))
-              .build();
-      var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+              .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(payload)));
+      String parent = InvestigationTrace.parent();
+      if (parent != null) request.header("traceparent", parent);
+      var response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+      if(response.statusCode()==503 && tasks.recoverAfterDisconnect(run)) return;
       if (response.statusCode() != 200) throw new IllegalStateException("AI_DEPENDENCY_FAILED");
       if (response.body().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 500000)
         throw new IllegalStateException("INVALID_DIAGNOSIS_REPORT");
@@ -79,6 +82,7 @@ public class InvestigationWorker {
           || !body.path("possible_causes").isArray())
         throw new IllegalStateException("INVALID_DIAGNOSIS_REPORT");
       tasks.complete(run, response.body(), null);
+      span.addEvent("investigation.completed");
     } catch (Exception e) {
       String code =
           e instanceof IllegalStateException
@@ -89,7 +93,11 @@ public class InvestigationWorker {
                       .contains(e.getMessage())
               ? e.getMessage()
               : "INVESTIGATION_FAILED";
+      span.setStatus(io.opentelemetry.api.trace.StatusCode.ERROR, code);
+      if(e instanceof java.io.IOException && tasks.recoverAfterDisconnect(run)) return;
       tasks.complete(run, null, code);
+    } finally {
+      span.end();
     }
   }
 }

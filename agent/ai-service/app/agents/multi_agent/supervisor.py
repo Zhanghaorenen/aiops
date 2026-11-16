@@ -3,6 +3,7 @@ import json
 import uuid
 from copy import copy
 import httpx
+from ...telemetry import graph_config
 from . import router
 from .graph import build
 from .budget import Budget
@@ -70,7 +71,9 @@ class MultiAgentSupervisor:
                 pass
         async def execute(task,ctx):
             try:
-                return await classes[task.agent](self.llm,self.tools,self.budget).run(task,ctx)
+                from ...telemetry import span
+                with span(task.agent+'_agent','agent'):
+                    return await classes[task.agent](self.llm,self.tools,self.budget).run(task,ctx)
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code in (401,403): raise
                 return AgentResult(agent=task.agent,status="failed",summary="依赖不可用",error_code="DEPENDENCY")
@@ -167,7 +170,7 @@ class MultiAgentSupervisor:
 
     async def ainvoke(self,question,history=None):
         scope=self.request_scope()
-        result=await asyncio.wait_for(scope.graph.ainvoke(scope.initial(question,history)),self.timeout)
+        result=await asyncio.wait_for(scope.graph.ainvoke(scope.initial(question,history),config=graph_config('MultiAgentSupervisor')),self.timeout)
         return result["final_answer"]
 
     async def answer(self,question,history=None):
@@ -177,7 +180,7 @@ class MultiAgentSupervisor:
         scope=self.request_scope()
         try:
             async with asyncio.timeout(self.timeout):
-                async for event in scope.graph.astream(scope.initial(question,history),stream_mode="custom"):
+                async for event in scope.graph.astream(scope.initial(question,history),config=graph_config("MultiAgentSupervisor"),stream_mode="custom"):
                     # Domain model drafting tokens remain internal. Only validated synthesis is user text.
                     if event.get("type")!="token" or "agent" not in event:
                         yield event

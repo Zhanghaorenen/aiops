@@ -10,6 +10,7 @@ import httpx
 from .chat import auth_scheme, get_settings
 from .knowledge import resources
 from ..agents.incident_graph import IncidentGraph
+from ..agents.checkpoint import CheckpointUnavailable
 
 router = APIRouter(prefix="/api/internal", tags=["受控事件调查"])
 
@@ -45,7 +46,10 @@ async def investigate(
         )
         stack.push_async_callback(platform.close)
         try:
-            await platform.get_current_user()
+            from ..telemetry import identify
+            user = await platform.get_current_user()
+            identify(userId=user.get('id'), incidentId=payload.incident_id, taskId=payload.task_id,
+                     runId=payload.task_id, threadId=payload.task_id)
             # 对固定目标先核权；服务密钥不能代替用户的服务器访问权限。
             await platform.get_server(payload.server_id)
             settings.require_llm()
@@ -62,10 +66,15 @@ async def investigate(
                     response=await platform.client.post(f"api/investigation-tasks/{payload.task_id}/progress",
                         json=value,headers={"X-AI-Service-Key":service_key,"X-Investigation-Lease":payload.lease})
                     response.raise_for_status()
-            return await asyncio.wait_for(
+            from ..telemetry import enabled
+            from ..agents.checkpoint import PlatformSaver
+            saver = None
+            if enabled('AIOPS_CHECKPOINT_ENABLED') and payload.task_id and payload.lease:
+                saver = PlatformSaver(platform,payload.task_id,payload.lease,service_key)
+            report = await asyncio.wait_for(
                 IncidentGraph(platform, llm, embedding, store,
                     max_rounds=settings.investigation_rounds,max_calls=settings.investigation_calls,
-                    seconds=settings.investigation_seconds,progress=progress).run(
+                    seconds=settings.investigation_seconds,progress=progress,checkpointer=saver,thread_id=payload.task_id).run(
                     payload.incident_id,
                     payload.server_id,
                     payload.question,
@@ -74,13 +83,19 @@ async def investigate(
                 ),
                 timeout=settings.investigation_seconds+5,
             )
+            from ..telemetry import current
+            if current():
+                report['executionTrace'] = current().snapshot()
+            return report
         except httpx.HTTPStatusError as exc:
             raise HTTPException(
                 exc.response.status_code
-                if exc.response.status_code in (401, 403, 404)
+                if exc.response.status_code in (401, 403, 404, 409)
                 else 502,
                 "平台拒绝调查请求或依赖异常",
             ) from exc
+        except CheckpointUnavailable as exc:
+            raise HTTPException(503,'调查节点存储暂不可用，等待恢复') from exc
         except TimeoutError as exc:
             raise HTTPException(504, "调查超时") from exc
         except Exception as exc:

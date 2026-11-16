@@ -34,7 +34,7 @@ class RetrievalService:
                 raise
             if kb['status']!='ACTIVE' or doc['status']!='READY' or doc['indexVersion']!=hit['index_version'] or doc['embeddingVersion']!=self.embedding.version: continue
             hit['document_title']=doc['originalFilename']
-            candidate=SearchResult(**hit).model_dump()
+            candidate=SearchResult(**hit).model_dump(exclude_unset=True)
             if len(json.dumps(results+[candidate],ensure_ascii=False))>12500: break
             results.append(candidate)
             if len(results)>=req.top_k: break

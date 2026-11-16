@@ -66,6 +66,11 @@ const charts=computed(()=>evidence.value.flatMap((e:any)=>{
       <p v-for="s in report.references" :key="s.chunk_id">{{ s.document_title }} · {{ s.section }} · {{ s.page??'页码未提供' }}</p>
       <p v-for="s in report.historical_cases" :key="s.case_id">{{ s.title }}（已验证的历史经验）</p>
     </details>
+    <details v-if="report.executionTrace"><summary>执行追踪 · {{ report.executionTrace.traceId }}</summary>
+      <p>调查 {{ report.incident_id }} · {{ new Date(report.executionTrace.startedAt*1000).toLocaleString() }} · {{ report.executionTrace.durationMs }} ms</p>
+      <ol><li v-for="(step,index) in report.executionTrace.spans" :key="index">{{ step.name }} · {{ step.durationMs }} ms · {{ step.error || step.status }}
+        <span v-if="step.type==='generation'"> · 输入 {{ step['gen_ai.usage.input_tokens'] ?? '未知' }} / 输出 {{ step['gen_ai.usage.output_tokens'] ?? '未知' }} tokens</span>
+      </li></ol></details>
     <details><summary>高级调查轨迹</summary><pre>{{ JSON.stringify(report.trace,null,2) }}</pre></details>
   </section>
 </template>

@@ -29,8 +29,11 @@ class SessionTurn:
         if not isinstance(answer, str) or not answer.strip() or len(answer) > 8000:
             raise ValueError("无效或过长的回答不能作为成功消息保存")
         if self.started:
+            from ..telemetry import current
+            metadata = {'sources': sources or [], 'resourceResults': resource_results or []}
+            if current(): metadata['traceId'] = current().trace_id
             await self.platform.finish_chat_turn(self.payload.session_id, self.payload.request_id, 'COMPLETED', answer,
-                                                 json.dumps({'sources': sources or [], 'resourceResults': resource_results or []}, ensure_ascii=False), lease=self.lease)
+                                                 json.dumps(metadata, ensure_ascii=False), lease=self.lease)
         self.completed = True
 
 

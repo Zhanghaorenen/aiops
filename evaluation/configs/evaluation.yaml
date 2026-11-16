@@ -1,0 +1,7 @@
+modes: [A, B, C]
+rag: hybrid
+embedding: fixture
+memory: default
+validation: "on"
+concurrency: 3
+timeout: 90

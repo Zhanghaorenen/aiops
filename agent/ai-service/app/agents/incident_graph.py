@@ -39,10 +39,12 @@ class State(TypedDict):
     plan: list[dict]
     report: dict
     retry_plan: bool
+    runtime: dict
 
 class IncidentGraph:
     def __init__(self, platform, llm, embedding, store, *, max_rounds=4, max_calls=12,
-                 seconds=150, progress=None):
+                 seconds=150, progress=None, checkpointer=None, thread_id=None):
+        self.checkpointer, self.thread_id = checkpointer, thread_id
         self.platform, self.llm = platform, llm
         self.retrieval = RetrievalService(platform, embedding, store)
         self.experience_memory = IncidentMemorySearch(platform,None,None,store=store) if store is not None else None
@@ -54,7 +56,9 @@ class IncidentGraph:
         for name,node in [("triage",self.triage),("initial_evidence",self.collect),
                           ("hypothesis",self.analyze),("plan_probe",self.plan),
                           ("execute_tools",self.collect),("evaluate_evidence",self.evaluate),("report",self.report)]:
-            builder.add_node(name,node)
+            from ..telemetry import traced
+            action = traced('incident.'+name)(node)
+            builder.add_node(name,self.durable_node(action) if checkpointer else action)
         builder.add_edge(START,"triage")
         builder.add_edge("triage","initial_evidence")
         builder.add_edge("initial_evidence","hypothesis")
@@ -63,7 +67,42 @@ class IncidentGraph:
         builder.add_edge("execute_tools","evaluate_evidence")
         builder.add_conditional_edges("evaluate_evidence",lambda s:"hypothesis" if not self.stop else "report")
         builder.add_edge("report",END)
-        self.graph=builder.compile()
+        self.graph=builder.compile(checkpointer=checkpointer)
+
+    _runtime_fields = ("calls","rounds","trace","sources","experiences","errors","rejected_probes",
+                       "invalid_plan","schema_repairs","stop","last_analysis")
+
+    def durable_node(self, node):
+        async def execute(state):
+            from ..telemetry import current
+            saved = state.get("runtime")
+            if saved:
+                if current() and saved.get('timeline'):
+                    current().resume(saved['timeline'])
+                self.anchor = datetime.fromisoformat(saved["anchor"])
+                self.tools = InvestigationTools(self.platform,state["server_id"],self.anchor,self.run_id)
+                for key in ("gpus","jobs","runs"):
+                    setattr(self.tools,key,set(saved[key]))
+                for key in self._runtime_fields:
+                    setattr(self,key,saved[key])
+                self.question = state["question"]
+                self.evidence = list(state.get("evidence",[]))
+                self.seen = {tuple(key) for key in saved["seen"]}
+                self.deadline = time.monotonic()+saved["remaining"]
+                # Time spent waiting for a new worker does not refresh a monitoring observation.
+                for item in self.evidence:
+                    if item["dataStatus"]=="FRESH" and item.get("sampledAt"):
+                        status,_ = data_status({"collectedAt":item["sampledAt"]},item["sourceTool"],datetime.now(timezone.utc))
+                        if status=="STALE":
+                            item["dataStatus"]="STALE"
+            result = await node(state)
+            runtime = {k:getattr(self,k) for k in self._runtime_fields}
+            runtime.update(anchor=self.anchor.isoformat(),remaining=max(0,self.deadline-time.monotonic()),
+                           seen=list(self.seen),gpus=list(self.tools.gpus),jobs=list(self.tools.jobs),runs=list(self.tools.runs))
+            if current():
+                runtime["timeline"]=current().snapshot()
+            return {**result,"runtime":runtime,"evidence":list(self.evidence)}
+        return execute
 
     @staticmethod
     def window_end(state):
@@ -82,7 +121,7 @@ class IncidentGraph:
                 await asyncio.wait_for(self.progress({"stage":stage,"toolCalls":len(self.trace),"round":self.rounds,
                     "checks":[{"tool":e["sourceTool"],"status":e["dataStatus"]} for e in self.evidence]}),timeout=2)
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code in (401,403): raise
+                if exc.response.status_code in (401,403,409): raise
             except (httpx.RequestError,TimeoutError):
                 pass
 
@@ -145,8 +184,10 @@ class IncidentGraph:
             await self.notify("正在检查"+labels[probe.tool]+"："+probe.purpose)
             started=time.monotonic()
             try:
-                data=await asyncio.wait_for(self.tools.execute(probe,self.knowledge,self.cases),
-                    timeout=min(25,max(.001,self.deadline-time.monotonic())))
+                from ..telemetry import span
+                with span(probe.tool,'tool'):
+                    data=await asyncio.wait_for(self.tools.execute(probe,self.knowledge,self.cases),
+                        timeout=min(25,max(.001,self.deadline-time.monotonic())))
                 status,sampled=data_status(data,probe.tool,datetime.now(timezone.utc))
                 data=compact(data)
                 if isinstance(data,dict) and data.get("dataOmitted"): status="UNKNOWN"
@@ -296,6 +337,10 @@ class IncidentGraph:
         analysis=dict(state.get("analysis") or self.empty_analysis())
         analysis.pop("probes",None)
         analysis.pop("sufficient",None)
+        usable={e['id'] for e in self.evidence if e['dataStatus']=='FRESH'}
+        for cause in analysis.get('possible_causes',[]):
+            if not usable.intersection(cause.get('supporting_evidence_ids',[])):
+                cause['uncertainty']='缺少新鲜监控支持，仅保留为待验证假设。'
         gaps=[e["sourceTool"]+"："+e["dataStatus"]+"，该检查不足以证明当前状态"
               for e in self.evidence if e["dataStatus"] in {"STALE","UNKNOWN","UNAVAILABLE","FORBIDDEN"}]
         if self.stop in {"BUDGET_EXHAUSTED","TIME_BUDGET"}: gaps.append("已达到调查预算，后续补查尚未执行")
@@ -316,8 +361,25 @@ class IncidentGraph:
         state={"incident_id":incident_id,"server_id":server_id,"question":question,
                "alert_evidence":alert_evidence or []}
         try:
-            return (await self.graph.ainvoke(state,config={"recursion_limit":40}))["report"]
+            from ..telemetry import graph_config
+            config=graph_config("IncidentGraph",{"recursion_limit":40})
+            if self.checkpointer:
+                config["configurable"]={"thread_id":str(self.thread_id)}
+                previous=await self.checkpointer.aget_tuple(config)
+                if previous:
+                    snapshot=await self.graph.aget_state(config)
+                    if snapshot.values and (snapshot.values.get("incident_id",incident_id)!=incident_id
+                            or snapshot.values.get("server_id",server_id)!=server_id):
+                        raise ValueError("CHECKPOINT_TARGET_MISMATCH")
+                    if not snapshot.next and snapshot.values.get("report"):
+                        return snapshot.values["report"]
+                result=await self.graph.ainvoke(None if previous else state,config=config,durability="sync")
+            else:
+                result=await self.graph.ainvoke(state,config=config)
+            return result["report"]
         except TimeoutError:
+            if not hasattr(self,'last_analysis'):
+                raise
             self.stop="TIME_BUDGET"
             # Preserve gathered evidence even when the model or a dependency exhausts its time budget.
             return (await self.report({**state,"analysis":self.last_analysis}))["report"]

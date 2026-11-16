@@ -84,3 +84,8 @@ docker compose --env-file .env -f compose.rag.yaml up -d
 - 训练准入拒绝：检查最新采样是否新鲜、RAM/显存安全预留与 Linux 身份映射。采集服务停止时不能承诺资源。
 - 温度缺失：操作系统未必提供 CPU 传感器；NVMe 温度按存储类别展示。
 - 模型缺失 / Qdrant 不可用：普通资产、监控和规则功能可独立使用；不要用模拟结果冒充真实模型回答。
+
+
+## 可选的 Agent 工程能力
+
+追踪、混合检索、节点恢复、MCP 和模型评估的调用链、配置与启动方法见[工程化升级交付](engineering-upgrade/README.md)。实测数据见[集中验证](engineering-upgrade/06-final-testing.md)。

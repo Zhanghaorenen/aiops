@@ -14,3 +14,11 @@ class SearchResult(BaseModel):
     section: str | None = None
     content: str
     score: float
+    dense_score: float | None = None
+    dense_rank: int | None = None
+    sparse_rank: int | None = None
+    rrf_rank: int | None = None
+    rrf_score: float | None = None
+    rerank_score: float | None = None
+    final_rank: int | None = None
+    retrieval_source: list[str] | None = None

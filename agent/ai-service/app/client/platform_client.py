@@ -5,10 +5,20 @@ from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 
 from ..config import http_url
+from ..telemetry import inject_platform, span
 
 
 class PlatformProtocolError(RuntimeError):
     pass
+
+
+class TracedPlatformHTTP(httpx.AsyncClient):
+    async def send(self, request, **kwargs):
+        # Route arguments, query strings, bodies and bearer credentials are intentionally absent.
+        with span("platform.http."+request.method.lower()) as obs:
+            response=await super().send(request,**kwargs)
+            obs["http.response.status_code"]=response.status_code
+            return response
 
 
 class PlatformClient:
@@ -21,11 +31,12 @@ class PlatformClient:
     ):
         if not access_token or not access_token.strip():
             raise ValueError("access_token must not be empty")
-        self.client = httpx.AsyncClient(
+        self.client = TracedPlatformHTTP(
             base_url=http_url(base_url, "backend_url") + "/",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=timeout,
             transport=transport,
+            event_hooks={'request':[inject_platform]},
             follow_redirects=False,
         )
 

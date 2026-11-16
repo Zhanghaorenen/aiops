@@ -1,7 +1,10 @@
 """OpenAI-compatible Chat Completions adapter; no model name or key is embedded."""
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
 from urllib.parse import urlsplit
+from ..telemetry import span, current, fixture_content
+import hashlib
+import os
 
 
 class ModelResponseError(RuntimeError):
@@ -43,7 +46,12 @@ class LLMClient:
             kwargs['max_tokens'] = max_tokens
         if tools:
             kwargs.update(tools=tools, tool_choice="auto")
-        completion = await self.client.chat.completions.create(**kwargs)
+        with span("llm.chat", "generation") as obs:
+            self.describe(obs, messages)
+            completion = await self.client.chat.completions.create(**kwargs)
+            self.usage(obs, getattr(completion, "usage", None))
+            if completion.choices and completion.choices[0].message:
+                fixture_content('output',completion.choices[0].message.content)
         if not completion.choices:
             raise ModelResponseError("模型没有返回有效结果")
         message = completion.choices[0].message
@@ -51,7 +59,29 @@ class LLMClient:
             raise ModelResponseError("模型没有返回有效消息")
         return message
 
+    def describe(self, obs, messages):
+        if not current(): return
+        fixture_content("input",messages)
+        obs["gen_ai.request.model"] = self.model
+        system = next((str(m["content"]) for m in messages if m.get("role")=="system"), "")
+        obs["promptHash"] = hashlib.sha256(system.encode()).hexdigest()[:16]
+        obs["langfuse.version"] = os.getenv('AIOPS_PROMPT_VERSION','aiops-engineering-v1')
+
+    @staticmethod
+    def usage(obs, usage):
+        if usage is not None:
+            for key, attr in (("input","prompt_tokens"),("output","completion_tokens")):
+                count = getattr(usage,attr,None)
+                if isinstance(count,int):
+                    obs["gen_ai.usage."+key+"_tokens"] = count
+
     async def stream_chat(self, messages: list[dict], tools=None):
+        with span("llm.stream", "generation") as obs:
+            self.describe(obs, messages)
+            async for event in self._stream(messages, tools, obs):
+                yield event
+
+    async def _stream(self, messages, tools, obs):
         """Yield model text deltas and complete OpenAI-format tool calls."""
         kwargs = {
             "model": self.model,
@@ -62,10 +92,19 @@ class LLMClient:
         if tools:
             kwargs.update(tools=tools, tool_choice="auto")
 
+        if current():
+            kwargs['stream_options'] = {'include_usage':True}
         tool_calls: dict[int, dict] = {}
-        stream = await self.client.chat.completions.create(**kwargs)
+        try:
+            stream = await self.client.chat.completions.create(**kwargs)
+        except BadRequestError as exc:
+            if "stream_options" not in kwargs or "stream_options" not in str(exc):
+                raise
+            kwargs.pop("stream_options")
+            stream = await self.client.chat.completions.create(**kwargs)
         async with stream:
             async for chunk in stream:
+                self.usage(obs, getattr(chunk,'usage',None))
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta

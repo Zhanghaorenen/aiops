@@ -47,7 +47,9 @@ class ChatRateLimiter:
         key = self.prefix + 'chat:rate:' + hashlib.sha256(str(identity).encode()).hexdigest()
         try:
             async with asyncio.timeout(2):
-                retry = int(await self.client.eval(RATE_SCRIPT, 1, key, self.limit, uuid.uuid4().hex))
+                from .telemetry import span
+                with span('redis.rate_limit'):
+                    retry = int(await self.client.eval(RATE_SCRIPT, 1, key, self.limit, uuid.uuid4().hex))
         except Exception as exc:
             # Fail closed across ALL workers; no unbounded per-process fallback on outages.
             self.unavailable += 1
